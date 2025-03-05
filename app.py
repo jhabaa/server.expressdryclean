@@ -1,3 +1,5 @@
+from config import Config
+
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -49,17 +51,7 @@ In Normal way, json inital class doesnt parse decimals. Then we used simplejson
 """
 app = Flask(__name__)
 
-
-""" Database connexion """
-app.config['MYSQL_HOST'] = 'heanlab.com'
-app.config['MYSQL_USER'] = '***REMOVED***'
-app.config['MYSQL_PASSWORD'] = 'HeanInformatique9164'
-app.config['MYSQL_DB'] = '***REMOVED***'
-app.config['PO_FILE'] = '/var/www/express/translations'
-app.config['UPLOAD_FOLDER'] = '/var/www/express/static/images'
-app.config['ROOT_FOLDER'] = '/var/www/express'
-app.config['BABEL_DEFAULT_LOCALE'] = 'fr'
-app.secret_key = '***REMOVED***'
+app.config.from_object(Config)
 mysql = MySQL(app)
 babel = Babel(app, locale_selector=get_locale)
 
@@ -112,10 +104,10 @@ def send_email(to_addr, subject, content:str, attachement_path : str = None):
         part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(attachement_path)}')
         msg.attach(part)
     #Send mail
-    smtp_server = 'smtp.mail.me.com'
-    smtp_port = 587
-    smtp_user = 'j.abaa@icloud.com'
-    smtp_pass = 'qbpw-cyjc-duap-txia'
+    smtp_server = app.config['MAIL_SERVER']
+    smtp_port = app.config['MAIL_PORT']
+    smtp_user = app.config['SMTP_USER']
+    smtp_pass = app.config['SMTP_PASSWORD']
     server = smtplib.SMTP(smtp_server, smtp_port)
     server.ehlo()
     server.starttls()

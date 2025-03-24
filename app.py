@@ -919,7 +919,7 @@ def localization(lang = 'fr', subpage = None ):
 
 #Funtion to make a post to googleReCaptcha and return the response
 def checkReCaptcha(token:str , remoteip:str = None):
-    key = "***REMOVED***"
+    key = app.config["RECAPTCHA_SERVER_KEY"]
     url = "https://www.google.com/recaptcha/api/siteverify"
     obj = {"secret":key, "response":token}
     x = requests.post(url, data = obj)

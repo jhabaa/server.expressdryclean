@@ -226,6 +226,10 @@ header.extended .up {
     flex-flow: column nowrap;
     margin: 0px;
     overflow: hidden;
+<<<<<<< HEAD
+=======
+    font-size: 13px;
+>>>>>>> 271857cdfb725b1cd46fe5e339079da30ded6046
 }
 
 header .up .logos {
@@ -397,6 +401,10 @@ header.extended nav {
     overflow-y: hidden;
     overflow-x: scroll;
     flex-flow: column nowrap;
+<<<<<<< HEAD
+=======
+    justify-content: flex-start;
+>>>>>>> 271857cdfb725b1cd46fe5e339079da30ded6046
 }
 
 header.extended .logo {
@@ -425,7 +433,11 @@ header.extended nav ul li {
     width: 100%;
     flex-wrap: nowrap;
     flex-direction: row;
+<<<<<<< HEAD
     font-size: clamp(20px, 14vw, 80px);
+=======
+    font-size: clamp(15px, 5vh, 30px);
+>>>>>>> 271857cdfb725b1cd46fe5e339079da30ded6046
 }
 
 header.extended nav ul li:hover {

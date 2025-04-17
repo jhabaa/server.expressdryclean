@@ -226,10 +226,6 @@ header.extended .up {
     flex-flow: column nowrap;
     margin: 0px;
     overflow: hidden;
-<<<<<<< HEAD
-=======
-    font-size: 13px;
->>>>>>> 271857cdfb725b1cd46fe5e339079da30ded6046
 }
 
 header .up .logos {
@@ -401,10 +397,7 @@ header.extended nav {
     overflow-y: hidden;
     overflow-x: scroll;
     flex-flow: column nowrap;
-<<<<<<< HEAD
-=======
     justify-content: flex-start;
->>>>>>> 271857cdfb725b1cd46fe5e339079da30ded6046
 }
 
 header.extended .logo {
@@ -433,11 +426,7 @@ header.extended nav ul li {
     width: 100%;
     flex-wrap: nowrap;
     flex-direction: row;
-<<<<<<< HEAD
-    font-size: clamp(20px, 14vw, 80px);
-=======
     font-size: clamp(15px, 5vh, 30px);
->>>>>>> 271857cdfb725b1cd46fe5e339079da30ded6046
 }
 
 header.extended nav ul li:hover {
@@ -1143,7 +1132,7 @@ header.extended .lang a {
     height: 100%;
     z-index: 5;
     background: rgb(255,255,255);
-    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(232,232,232,0.2091211484593838) 30%, rgba(255,255,255,1) 40%);
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(232,232,232,0.2091211484593838) 10%, rgba(255,255,255,1) 90%);
 }
 
 .page2 .photowall .scroller_in:hover {
@@ -1313,6 +1302,7 @@ form .submit-btn:hover {
     text-align: center;
     font-family: "Inter", sans-serif;
     color: var(--dark-blue-1);
+    width: 100%;
 }
 
 .subtitle {
@@ -1320,9 +1310,9 @@ form .submit-btn:hover {
     font-size: 1.2rem;
     color: var(--large-subtitle-text);
     max-width: 600px;
-    padding-inline: 10px;
     text-align: center;
     font-weight: 100;
+    width: 100%;
 }
 
 .subtitle p {
@@ -1473,6 +1463,7 @@ form .submit-btn:hover {
     flex-direction: column;
     justify-content: center;
     align-items: center;
+    width: 100%;
 }
 
 .description .header {
@@ -1746,7 +1737,7 @@ form .submit-btn:hover {
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
-    padding: 10px;
+    padding-block: 10px;
     width: 100%;
 }
 
@@ -2952,13 +2943,19 @@ iframe {
 .legal {
     display: flex;
     justify-content: center;
-    gap: 30px;
+    flex-flow: row wrap;
+    row-gap: 30px;
+    column-gap: 50px;
 }
 
 .legal a {
     opacity: 0.5;
     font-weight: 100;
+    text-wrap-mode: nowrap;
+    text-wrap: nowrap;
+    text-wrap-style: stable;
     text-align: center;
+    text-overflow: clip;
 }
 
 .legal a:hover {

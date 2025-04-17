@@ -226,6 +226,7 @@ header.extended .up {
     flex-flow: column nowrap;
     margin: 0px;
     overflow: hidden;
+    font-size: 13px;
 }
 
 header .up .logos {
@@ -397,6 +398,7 @@ header.extended nav {
     overflow-y: hidden;
     overflow-x: scroll;
     flex-flow: column nowrap;
+    justify-content: flex-start;
 }
 
 header.extended .logo {
@@ -425,7 +427,7 @@ header.extended nav ul li {
     width: 100%;
     flex-wrap: nowrap;
     flex-direction: row;
-    font-size: clamp(20px, 14vw, 80px);
+    font-size: clamp(15px, 5vh, 30px);
 }
 
 header.extended nav ul li:hover {

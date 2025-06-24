@@ -11,3 +11,4 @@ __pycache__/
 translations/
 .env
 *.env
+*.csv

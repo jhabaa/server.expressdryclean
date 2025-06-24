@@ -1,7 +1,14 @@
+[![SonarQube Cloud](https://sonarcloud.io/images/project_badges/sonarcloud-light.svg)](https://sonarcloud.io/summary/new_code?id=jhabaa_server.expressdryclean)
 # 🚀 Express Dry Clean – Plateforme Web
 
 Bienvenue sur le dépôt officiel de **Express Dry Clean**, une application web professionnelle dédiée à la gestion de nos services de blanchisserie, couture et pressing en ligne.
 
+[![Quality gate](https://sonarcloud.io/api/project_badges/quality_gate?project=jhabaa_server.expressdryclean)](https://sonarcloud.io/summary/new_code?id=jhabaa_server.expressdryclean)
+
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=jhabaa_server.expressdryclean&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=jhabaa_server.expressdryclean)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=jhabaa_server.expressdryclean&metric=bugs)](https://sonarcloud.io/summary/new_code?id=jhabaa_server.expressdryclean)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=jhabaa_server.expressdryclean&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=jhabaa_server.expressdryclean)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=jhabaa_server.expressdryclean&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=jhabaa_server.expressdryclean)
 ---
 
 ## ✨ Fonctionnalités principales

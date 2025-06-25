@@ -32,7 +32,6 @@ python-dotenv==1.0.1
 python-jose==3.4.0
 python-magic==0.4.27
 pytz==2024.1
-PyYAML==6.0
 requests==2.30.0
 rsa==4.9
 serial==0.0.97

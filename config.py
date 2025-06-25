@@ -8,7 +8,7 @@ class Config:
     UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")
     ROOT_FOLDER = os.getenv("ROOT_FOLDER")
     SERVICE_NAME = os.getenv("SERVICE_NAME")
-    ALGORITHMS = ['***REMOVED***']
+    ALGORITHMS = os.getenv("ALGORITHMS")
     AUTH0_AUDIENCE = os.getenv("AUTH0_AUDIENCE")
     AUTH0_DOMAIN = os.getenv("AUTH0_DOMAIN")
     AUTH0_CLIENT_ID = os.getenv("AUTH0_CLIENT_ID")

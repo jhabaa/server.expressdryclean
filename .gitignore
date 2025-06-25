@@ -4,6 +4,7 @@ __pycache__/
 *.mwb
 *.wsgi
 *.aep
+.DS_Store
 
 #Ignore languages
 *.pot

@@ -1,5 +1,6 @@
 # Ignore Python virtual environment
 express/
+.express/
 __pycache__/
 *.mwb
 *.wsgi

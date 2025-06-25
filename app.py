@@ -264,9 +264,9 @@ def defaultconverter(o):
 
 #====================================== Mail management =====================================
 #Function to send mail
-def send_email(to_addr, subject, content:str, attachment_path : str = None, name:str = None):
+def send_email(to_addr, subject, content:str, attachment_path : str = None, name:str = None, reply_to:str = None):
     #Signature as image
-    html_text3 = f'<p>Cordialement,</p><img src="http://express.heanlab.com/getimage?name=signature" alt="" style="margin:0px; padding:0px; border-radius:0rem 0rem 2rem 2rem;"/>'
+    html_text3 = f'<p>Cordialement,</p><img src="http://express.***REMOVED***/getimage?name=signature" alt="" style="margin:0px; padding:0px; border-radius:0rem 0rem 2rem 2rem;"/>'
 
     header = MIMEText(content, 'html', 'utf-8')
     msg = MIMEMultipart('alternative')
@@ -274,6 +274,9 @@ def send_email(to_addr, subject, content:str, attachment_path : str = None, name
     msg['From'] = app.config['NOREPLY_EMAIL']
     msg['To'] = to_addr
     msg.attach(header)
+    # If email is send to the admin, I'll set the reply to the client email
+    if reply_to:
+        msg['Reply-To'] = reply_to
     # add attahement if exists
     if attachment_path:
         with open(attachment_path, 'rb') as f:
@@ -769,7 +772,8 @@ def submit_collaboration():
         <p><strong>Message :</strong></p>
         <blockquote><p>{message}</p></blockquote>
         <p>📅 Cette demande a été envoyée via le formulaire de collaboration.</p>
-        """
+        """,
+        reply_to=email  # Set the reply-to to the user's email
     )
 
     # send mail to the user to confirm the message
@@ -852,6 +856,7 @@ def submit_career():
             <p>📎 <strong>CV en pièce jointe</strong></p>
             <p>📅 Cette candidature a été envoyée depuis le formulaire en ligne.</p>
             """,
+            reply_to=email,  # Set the reply-to to the user's email
             attachment_path=os.path.join(app.config['UPLOAD_FOLDER'], filename),  # ✅ Ajoute le CV en pièce jointe
             name=name
         )
@@ -954,7 +959,8 @@ def chatwithus():
     <p><strong>Message :</strong></p>
     <blockquote>{message}</blockquote>
     <p>📅 Ce message a été envoyé depuis le formulaire de contact.</p>
-    """
+    """,
+    reply_to=email  # Set the reply-to to the user's email
 )   
     #send mail to user to inform him that his message has been sent
     send_email(

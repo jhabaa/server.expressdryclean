@@ -11,4 +11,5 @@ __pycache__/
 translations/
 .env
 *.env
-config.py
+*.csv
+*.mo

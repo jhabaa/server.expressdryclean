@@ -9,11 +9,11 @@ jobs:
     runs-on: self-hosted
 
     steps:
-    -  name: Checkout project
-    -  uses: actions/checkout@v4
+    - name: Checkout project
+    - uses: actions/checkout@v4
 
-    -  name: Running Pytest
-    
-    -  run: pytest
+    - name: Running Pytest
+    run: |
+      pytest
         
     

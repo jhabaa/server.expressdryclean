@@ -5,7 +5,7 @@ from six.moves.urllib.request import urlopen
 from typing import Dict
 from flask_cors import cross_origin
 from jose import jwt
-
+import threading
 import requests
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -20,7 +20,7 @@ import datetime
 import os
 
 # languages management
-from flask_babel import Babel, gettext, refresh, _
+from flask_babel import Babel, refresh, _
 
 # I use Polib to read babel files
 import polib
@@ -34,8 +34,6 @@ from unicodedata import decimal
 from flask import (
     Flask,
     jsonify,
-    request_started,
-    request_tearing_down,
     send_file,
     session,
     flash,
@@ -47,9 +45,7 @@ from flask_mysql_connector import MySQL
 # import simplejson as js
 import json as json
 import magic
-import decimal
 from werkzeug.utils import secure_filename
-from werkzeug.datastructures import FileStorage
 
 # import geopy
 # from geopy import distance
@@ -77,7 +73,6 @@ mysql = MySQL(app)
 babel = Babel(app, locale_selector=get_locale)
 
 # flash dictionary with errors and success messages
-from flask_babel import _
 
 flash_dict = {
     1: _("✅ Le formulaire a bien été envoyé."),
@@ -405,26 +400,6 @@ with open(f'{settingPath}/address.csv', 'r', encoding="latin-1") as address:
 """
 
 
-# send address array
-@app.route("/getaddress", methods=["POST"])
-def searchAddress():
-    if request.method == "POST":
-        result = []
-        a = request.json["adress"]
-        for df in read_csv(f"{settingPath}/address.csv"):
-            # df = df[['address', 'longitude', 'latitude']]
-            # Sort the dataframe by Name
-            df = df[df["address"].str.contains(a, case=False)]
-            for index, row in df.iterrows():
-                result.append(
-                    Address(row["address"], row["longitude"], row["latitude"])
-                )
-
-        return json.dumps(
-            result[:5], indent=4, default=lambda o: o.__dict__, ensure_ascii=False
-        )
-
-
 # ================================================================================================
 # ====================================== Days off management =====================================
 
@@ -500,7 +475,7 @@ command_service = Enum(
 
 def FormatTextToMysql(a, sep):
     # if a is a number value, return it as it is
-    if type(a) == int or type(a) == float:
+    if type(a) is int or type(a) is float:
         return a
     else:
         return f"'{a}'"
@@ -523,7 +498,6 @@ def GetData(filetype: str, name: str, where=None, lang=None):
         cur.execute(com)
 
     else:
-        translation_table = f"{name}_translation"
         cur.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.{name}")
     a = cur.fetchall()
     if filetype == "json":
@@ -550,11 +524,10 @@ def Operate(model: str):
     if not primary_key:
         return jsonify({"status": "error", "message": "No primary key found"}), 400
 
-    result = ""
     if request.method == "POST":
         cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.{model}")
         attributes = list(cursor.column_names)
-        values = list(request.json[str(att)] for att in attributes)
+        list(request.json[str(att)] for att in attributes)
         ### Execute command
         cursor.close()
         cursor = mysql.new_cursor(dictionary=True, buffered=True)
@@ -571,7 +544,7 @@ def Operate(model: str):
     if request.method == "DELETE":
         # Get the id of the element to delete
         cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.{model}")
-        model_ID = list(cursor.column_names)[-1]
+        list(cursor.column_names)[-1]
         cursor.close()
         cursor = mysql.new_cursor(dictionary=True, buffered=True)
         cursor.execute(
@@ -749,7 +722,6 @@ def GetCostDelevery(code):
 @app.route("/checkcoupon", methods=["POST"])
 def Check_Coupon():
     if request.method == "POST":
-        cost = 0.00
         cursor = mysql.new_cursor(dictionary=True)
         code = request.json["code"]
         cursor.execute(f"SELECT * FROM appexpress.coupon WHERE code = '{code}'")
@@ -774,7 +746,7 @@ def ResetPassword():
     mail = request.args.get("mail")
     print("Voici le mail client = " + mail)
     cursor = mysql.new_cursor(dictionary=True)
-    cursor.execute(f"SELECT * FROM appexpress.user WHERE mail = '" + mail + "'")
+    cursor.execute("SELECT * FROM appexpress.user WHERE mail = '" + mail + "'")
     response = cursor.fetchone()
     print("La réponse est" + str(response["name"] + str(response["password"])))
     # send_email(to_addr=mail, subject="Mot de passe Ex-press Dry Clean", user_name=(response["name"]), email_type="passwordReset", user_recap=response["password"])
@@ -802,7 +774,7 @@ def home(lang="fr", subpage=None, store=None):
     # fill_database()
     # set language
     session["lang"] = lang
-    user = getattr(g, "user", None)
+    getattr(g, "user", None)
 
     print(getattr(g, "user", None))
     # return str((GetCostDelevery("Rue Saint-germain 92 1410 Waterloo")*price_by_km).quantize(decimal.Decimal('.01')))
@@ -954,12 +926,12 @@ def submit_collaboration():
 
     recaptchaResponse = checkReCaptcha(token=recaptcha)
 
-    if recaptchaResponse == False:
+    if not recaptchaResponse:
         flash(flash_dict[2], "error")
         return redirect(url_for("collaborations", lang=session["lang"]))
     try:
         all_services_check = data["all_services"]
-    except:
+    except KeyError:
         all_services_check = False
 
     # Set a cool message cause form is okay
@@ -967,7 +939,7 @@ def submit_collaboration():
 
     selected_services = (
         [x for x in data if x in availablesCategoriesNames]
-        if all_services_check == False
+        if not all_services_check
         else availablesCategoriesNames
     )
     # send mail to admin to inform him about the Collaboration
@@ -1054,8 +1026,8 @@ def submit_career():
     recaptcha = data["g-recaptcha-response"]
     print(data, flush=True)
     recaptchaResponse = checkReCaptcha(token=recaptcha)
-    is_invalid = email == None or name == None  # Check if some datas are present
-    if recaptchaResponse == False or is_invalid:
+    is_invalid = email is None or name is None  # Check if some datas are present
+    if not recaptchaResponse or is_invalid:
         flash(flash_dict[2], "error")
         return redirect(url_for("career", lang=session["lang"]))
 
@@ -1119,7 +1091,7 @@ def submit_career():
 @app.route("/<lang>/contact/")
 @app.route("/<lang>/contact/<subpage>")
 def contact(lang="fr", subpage=None):
-    greatings = _("Bonjour")
+    _("Bonjour")
     # set language
     session["lang"] = lang
     stores = GetData("full", "store")
@@ -1208,7 +1180,7 @@ def chatwithus():
     print(data, flush=True)
     recaptchaResponse = checkReCaptcha(token=recaptcha)
 
-    if recaptchaResponse == False:
+    if not recaptchaResponse:
         flash(flash_dict[12], "error")
         return redirect(url_for("contact", lang=session["lang"]))
 
@@ -1282,16 +1254,13 @@ def GetServerState():
     return "Connected"
 
 
-import threading
-
-
 # Function to restart the server
 @app.route("/hotrestartserver", methods=["GET"])
 @cross_origin(headers=["Content-Type", "Authorization"])
 @requires_auth
 def RestartServer():
     def restart():
-        result = subprocess.run(
+        subprocess.run(
             ["sudo", "systemctl", "restart", f"{app.config['SERVICE_NAME']}"],
             check=True,
             capture_output=True,
@@ -1352,7 +1321,7 @@ def getPot():
 
 @app.route("/babel_test")
 def babel_test():
-    pot = polib.pofile(f"./messages.pot")
+    pot = polib.pofile("./messages.pot")
     t = {entry.msgid: entry.msgstr for entry in pot}
     return t
 
@@ -1428,7 +1397,7 @@ def GetUserCommands():
 @app.route("/addservice", methods=["POST", "GET"])
 def AddService():
     if request.method == "POST":
-        id = request.json["id"]
+        request.json["id"]
         name = request.json["name"]
         cost = decimal.Decimal(str(request.json["cost"])).quantize(
             decimal.Decimal(".01")
@@ -1439,7 +1408,7 @@ def AddService():
         illustration = request.json["illustration"]
         cursor = mysql.new_cursor()
         cursor.execute(
-            f"INSERT INTO `appexpress`.`service` (`name`, `cost`, `categories`, `description`, `time`,`illustration`) VALUES ('{name}', '{cost}', '{category}', '{description}', '{size}', '{unidecode(illustration)}');"
+            f"INSERT INTO `appexpress`.`service` (`name`, `cost`, `categories`, `description`, `time`,`illustration`) VALUES ('{name}', '{cost}', '{category}', '{description}', '{size}', '{unidecode_text_to_utf(illustration)}');"
         )
         mysql.connection.commit()
         return "True"
@@ -1460,7 +1429,7 @@ def Update_Service():
         illustration = request.json["illustration"]
         cursor = mysql.new_cursor()
         cursor.execute(
-            f"UPDATE `appexpress`.`service` SET `name` = '{name}', `cost` = '{cost}', `categories` = '{category}', `time` = '{size}', `description` = '{description}', `illustration` = '{unidecode(illustration)}' WHERE (`id` = '{id}');"
+            f"UPDATE `appexpress`.`service` SET `name` = '{name}', `cost` = '{cost}', `categories` = '{category}', `time` = '{size}', `description` = '{description}', `illustration` = '{unidecode_text_to_utf(illustration)}' WHERE (`id` = '{id}');"
         )
         mysql.connection.commit()
         return "True"
@@ -1573,7 +1542,6 @@ def AddUser():
         mysql.connection.commit()
         id = cur.lastrowid
         # Create user recap in html array
-        user_recap = f"<table><tr><td>Nom</td><td>{nameUser}</td></tr><tr><td>Adresse</td><td>{addressUser}</td></tr><tr><td>Mail</td><td>{email}</td></tr><tr><td>GSM</td><td>{phoneUser}</td></tr><tr><td>Mot de passe</td><td>{passwordUser}</td></tr></table> <i>Ceci est un mail factice pour tests alpha</i>"
         # Send mail to user
         # send_email(to_addr=email, subject="Inscription Ex-press Dry Clean", user_name=(nameUser), email_type="inscription", user_recap=user_recap)
         return json.dumps(id)
@@ -1592,7 +1560,6 @@ def GetCommands():
 @app.route("/addcommand", methods=["POST", "GET"])
 def AddCommand():
     if request.method == "POST":
-        file = request.json
         id = request.json["id"]
         user = request.json["user"]
         status = request.json["infos"]
@@ -1600,7 +1567,7 @@ def AddCommand():
         enter_date = request.json["enter_date"]
         return_date = request.json["return_date"]
         discount = request.json["discount"]
-        date = request.json["date_"]
+        request.json["date_"]
         # date =  request.json['enter_date']
         services_quantity = request.json["services_quantity"]
         # agent = request.json['agent']
@@ -1622,13 +1589,13 @@ def AddCommand():
             )
             mysql.connection.commit()
         # Create command recap in html array
-        command_recap = f"<table><tr><td>Numéro de commande</td><td>{id}</td></tr><tr><td>Prix</td><td>{cost}</td></tr><tr><td>Date de prise en charge</td><td>{enter_date}</td></tr><tr><td>Date de retour</td><td>{return_date}</td></tr><tr><td>Quantite de services</td><td>{services_quantity}</td></tr><tr><td>Heure de prise en charge</td><td>{enter_time}h-{int(enter_time) + 1}h</td></tr><tr><td>Heure de retour</td><td>{return_time}h-{int(return_time) + 1}h</td></tr><tr><td>Sous-total</td><td>{sub_total}</td></tr><tr><td>Livraison</td><td>{delivery}</td></tr></table> <i>Ceci est un mail factice pour tests de version alpha</i>"
+        f"<table><tr><td>Numéro de commande</td><td>{id}</td></tr><tr><td>Prix</td><td>{cost}</td></tr><tr><td>Date de prise en charge</td><td>{enter_date}</td></tr><tr><td>Date de retour</td><td>{return_date}</td></tr><tr><td>Quantite de services</td><td>{services_quantity}</td></tr><tr><td>Heure de prise en charge</td><td>{enter_time}h-{int(enter_time) + 1}h</td></tr><tr><td>Heure de retour</td><td>{return_time}h-{int(return_time) + 1}h</td></tr><tr><td>Sous-total</td><td>{sub_total}</td></tr><tr><td>Livraison</td><td>{delivery}</td></tr></table> <i>Ceci est un mail factice pour tests de version alpha</i>"
         # Get user infos
         cur.execute(f"SELECT * FROM appexpress.user WHERE id = '{user}'")
-        a = cur.fetchall()
+        cur.fetchall()
         # Get services info
         # Write mail
-        command_recap = f"<table><tr><td>Numéro de commande</td><td>{id}</td></tr><tr><td>Prix</td><td>{cost}€</td></tr><tr><td>Date de prise en charge</td><td>{enter_date}</td></tr><tr><td>Date de retour</td><td>{return_date}</td></tr><tr><td>Heure de prise en charge</td><td>{enter_time}h-{int(enter_time) + 1}h</td></tr><tr><td>Heure de retour</td><td>{return_time}h-{int(return_time) + 1}h</td></tr><tr><td>Sous-total</td><td>{sub_total}€</td></tr><tr><td>Livraison</td><td>{delivery}€</td></tr></table>"
+        f"<table><tr><td>Numéro de commande</td><td>{id}</td></tr><tr><td>Prix</td><td>{cost}€</td></tr><tr><td>Date de prise en charge</td><td>{enter_date}</td></tr><tr><td>Date de retour</td><td>{return_date}</td></tr><tr><td>Heure de prise en charge</td><td>{enter_time}h-{int(enter_time) + 1}h</td></tr><tr><td>Heure de retour</td><td>{return_time}h-{int(return_time) + 1}h</td></tr><tr><td>Sous-total</td><td>{sub_total}€</td></tr><tr><td>Livraison</td><td>{delivery}€</td></tr></table>"
         # Send mail to user
         # send_email(to_addr=a[0]["mail"], subject="Commande Ex-press Dry Clean", user_name=(a[0]["name"] +" "+ a[0]["surname"]), email_type="command_validation", command_recap=command_recap)
 
@@ -1702,7 +1669,7 @@ def GetTimes():
 def UpdateTimes():
     id = request.json["id"]
     state = request.json["state"]
-    day = request.json["day"]
+    request.json["day"]
     cursor = mysql.new_cursor()
     cursor.execute(
         "UPDATE `appexpress`.`times` SET `state` = '"
@@ -1722,7 +1689,7 @@ def AddTime():
         creneau = request.json["creneau"]
         state = request.json["state"]
         day = request.json["day"]
-        program = request.json["program"]
+        request.json["program"]
         cursor = mysql.new_cursor()
         cursor.execute(
             "INSERT INTO `appexpress`.`times` (`creneau`, `state`,`day`) VALUES ('"
@@ -1777,7 +1744,7 @@ def DeleteUser():
     if request.method == "POST":
         user = request.json["id"]
         # Get user datas
-        mail = request.json["mail"]
+        request.json["mail"]
 
         cursor = mysql.new_cursor(dictionary=True)
         cursor.execute(
@@ -1824,15 +1791,15 @@ def SecureConnection():
 @app.route("/updatecommand", methods=["POST"])
 def UpdateCommand():
     Id = request.json["id"]
-    infos = request.json["infos"]
+    request.json["infos"]
     dateIn = request.json["enter_date"]
     dateOut = request.json["return_date"]
     cost = request.json["cost"]
-    discount = request.json["discount"]
+    request.json["discount"]
     services_quantity = request.json["services_quantity"]
-    date = request.json["date_"]
+    request.json["date_"]
     agent = request.json["agent"]
-    user = request.json["user"]
+    request.json["user"]
     enter_time = request.json["enter_time"]
     return_time = request.json["return_time"]
     sub_total = request.json["sub_total"]
@@ -1866,7 +1833,7 @@ def get_current_time():
 
 
 # Function to convert a text to utf-8
-def unidecode(text):
+def unidecode_text_to_utf(text):
     return unidecode.unidecode(text)
 
 
@@ -1920,7 +1887,7 @@ def get_all_images():
     result = f"{app.config['UPLOAD_FOLDER']}/default.png"
     fullname = f"{app.config['UPLOAD_FOLDER']}/default.png"
     """ On recupère le nom de l'image """
-    reqname = request.args.get("name")
+    request.args.get("name")
     """On cherche son nom dans le repertoire des images"""
     for root, directories, files in os.walk(app.config["UPLOAD_FOLDER"]):
         for name in files:

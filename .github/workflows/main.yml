@@ -6,14 +6,14 @@ on:
 jobs:
   my_job:
     name: My Promox runner 
-    runs-on: self-hosted
+    runs-on: [self-hosted]
 
     steps:
     - name: Checkout project
-    - uses: actions/checkout@v4
+      uses: actions/checkout@v4
 
     - name: Running Pytest
-    run: |
-      pytest
+      run: |
+        pytest
         
     

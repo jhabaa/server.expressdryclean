@@ -2,8 +2,15 @@ import app
 import pytest
 from config import Config
 
-@pytest.fixture
-def client():
-    app.app.config.from_object(Config)
-    with app.app.test_client() as client:
-        yield client
+@pytest.fixture()
+def application():
+    application = app
+    application.app.config.update(
+        TESTING=True,
+        DEBUG=True
+    )
+    yield application
+
+@pytest.fixture()
+def client(application):
+    return application.app.test()

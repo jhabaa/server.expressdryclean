@@ -209,9 +209,6 @@ if (services.length > 0) {
     // Now set the query when we hover the rest 
     services.forEach(function(service) {
         service.addEventListener('mouseover', function() {
-            console.log(this);
-            selectedIndex = this.getAttribute('data-index');
-           
             services.forEach(function(service) {
                 service.classList.remove('active');
             });

@@ -20,7 +20,7 @@ import datetime
 import os
 
 #languages management
-from flask_babel import Babel, gettext, refresh, _
+from flask_babel import Babel, refresh, _
 
 #I use Polib to read babel files
 import polib
@@ -28,20 +28,17 @@ import polib
 import subprocess
 
 from unicodedata import decimal
-#from urllib import request
-from flask import Flask, jsonify, request_started, request_tearing_down, send_file, session, flash
+
+from flask import Flask, jsonify, send_file, session, flash
 from flask import render_template, g, Response, _request_ctx_stack
 from flask import request, url_for,redirect
 from flask_mysql_connector import MySQL
-#import simplejson as js
+
 import json as json
 import magic
 import decimal
 from werkzeug.utils import secure_filename
-from werkzeug.datastructures import  FileStorage
-#import geopy
-#from geopy import distance
-#from geopy.geocoders import Nominatim
+
 import csv
 
 
@@ -248,12 +245,6 @@ class Address:
 
 settingPath = os.path.abspath('/var/www/express/static')
 settingPath = os.path.abspath('./static')
-#Set EXPRESS ADRESS
-"""
-geolocator = Nominatim(user_agent="express_dry_clean")
-express_adress = geolocator.geocode("rue des allies 93 1190 Forest")
-start_point = (express_adress.latitude, express_adress.longitude)   
-"""
 
 #To Convert DateTime
 def defaultconverter(o):
@@ -299,31 +290,6 @@ def send_email(to_addr, subject, content:str, attachment_path : str = None, name
         writer = csv.writer(f)
         writer.writerow([datetime.datetime.now().strftime("%d/%m/%Y - %H:%M:%S"), to_addr, subject, name, content])
         f.close()
-
-"""
-with open(f'{settingPath}/address.csv', 'r', encoding="latin-1") as address:
-        reader = csv.DictReader(address)
-        for row in reader:
-            all_address.append(Address(adress=f'{row["address"]}', latitude=row["latitude"], longitude=row["longitude"]))
-        
-        # close
-        address.close()
-"""
-# send address array
-@app.route('/getaddress', methods=['POST'])
-def searchAddress():
-    if request.method == 'POST':
-        result = []
-        a = request.json['adress']
-        for df in read_csv(f"{settingPath}/address.csv"):
-            #df = df[['address', 'longitude', 'latitude']]
-            # Sort the dataframe by Name
-            df = df[df['address'].str.contains(a, case=False)]
-            for index, row in df.iterrows():
-                result.append(Address(row['address'], row['longitude'], row['latitude']))
-        
-        return json.dumps(result[:5], indent=4, default=lambda o: o.__dict__, ensure_ascii=False)
-
 
 #================================================================================================
 #====================================== Days off management =====================================
@@ -1256,7 +1222,6 @@ def AddUser():
         #Create user recap in html array
         user_recap = f"<table><tr><td>Nom</td><td>{nameUser}</td></tr><tr><td>Adresse</td><td>{addressUser}</td></tr><tr><td>Mail</td><td>{email}</td></tr><tr><td>GSM</td><td>{phoneUser}</td></tr><tr><td>Mot de passe</td><td>{passwordUser}</td></tr></table> <i>Ceci est un mail factice pour tests alpha</i>"
         #Send mail to user
-        #send_email(to_addr=email, subject="Inscription Ex-press Dry Clean", user_name=(nameUser), email_type="inscription", user_recap=user_recap)
         return json.dumps(id)
     
 #Get all commands
@@ -1812,13 +1777,6 @@ dictionary = {'fr':{
     ]
 }}
 
-""" @app.after_request
-def add_header(response):
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '-1'
-    return response
- """
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=7001)
     refresh()

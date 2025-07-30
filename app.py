@@ -700,7 +700,6 @@ def localization(lang = 'fr', subpage = None ):
     services = get('full','service')
     categories = sorted(get('full','category'), key=lambda x: x['index'])# Get just the categories 
     available_store = [ x for x in stores if x['name'] == subpage][-1] if subpage else None
-
     return render_template('localization.html', lang = session['lang'], dictionary = dictionary[lang], stores = stores, selected_store = available_store, current_page = 'localization', services = services, categories = categories)
 
 
@@ -981,235 +980,6 @@ def check_user():
         result = cur.fetchone()
         return result
 
-#Get all users
-@app.route('/getusers')
-def GetUsers():
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute('SELECT * FROM appexpress.user')
-    a = cur.fetchall()
-    return json.dumps(a)
-
-#Obtenir des informations sur un utilisateur à partir de son ID
-@app.route('/getuserinfo')
-def GetUserInfo():
-    userID = request.args.get('id')
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute("SELECT * FROM appexpress.user WHERE id = '"+userID+"'")
-    a = cur.fetchall()
-    return json.dumps(a)
-
-#Mettre à jour un utilisateur à partir de son ID
-@app.route('/updateuser', methods = ['POST'])
-def UpdateUser():
-    id_ = request.json['id']
-    username = request.json['name']
-    mail = request.json['mail']
-    adress = request.json['adress']
-    phone = request.json['phone']
-    password = request.json['password']
-    account = request.json['type']
-    loc_lat = request.json['loc_lat']
-    loc_lon = request.json['loc_lon']
-    province = request.json['province']
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute(f"UPDATE `appexpress`.`user` SET `name` = '{username}', `mail` = '{mail}', `adress` = '{adress}', `phone` = '{phone}', `password` = '{password}', `type` = '{account}', `loc_lat` = '{loc_lat}', `loc_lon` = '{loc_lon}', `province` = '{province}'  WHERE (`id` = '{id_}');")
-    mysql.connection.commit()
-    #Get user and send it back
-    cursor.execute(f'SELECT * FROM appexpress.user WHERE id = {id_};')
-    a = cursor.fetchone()
-    print(a)
-    return json.dumps(a)
-
-#Register User
-@app.route('/register', methods = ['POST', 'GET'])
-def AddUser():
-    if request.method == 'POST':
-        cur = mysql.new_cursor()
-        nameUser = request.json['name']
-        email = request.json['mail']
-        addressUser = request.json['adress']
-        phoneUser = request.json['phone']
-        passwordUser = request.json['password']
-        typeUser = request.json['type']
-        loc_lat = request.json['loc_lat']
-        loc_lon = request.json['loc_lon']
-        province = request.json['province']
-        cur.execute(f"INSERT INTO `appexpress`.`user` (`name`, `mail`, `adress`, `phone`, `password`, `type`, `loc_lat`, `loc_lon`, `province`) VALUES ('{nameUser}', '{email}', '{addressUser}', '{phoneUser}', '{passwordUser}', '{typeUser}', '{loc_lat}', '{loc_lon}', '{province}')")
-        mysql.connection.commit()
-        id = cur.lastrowid
-        #Create user recap in html array
-        user_recap = f"<table><tr><td>Nom</td><td>{nameUser}</td></tr><tr><td>Adresse</td><td>{addressUser}</td></tr><tr><td>Mail</td><td>{email}</td></tr><tr><td>GSM</td><td>{phoneUser}</td></tr><tr><td>Mot de passe</td><td>{passwordUser}</td></tr></table> <i>Ceci est un mail factice pour tests alpha</i>"
-        #Send mail to user
-        return json.dumps(id)
-    
-#Get all commands
-@app.route('/getcommands')
-def GetCommands():
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute('SELECT * FROM appexpress.command')
-    a = cur.fetchall()
-    return json.dumps(a, default=defaultconverter)
-
-#Add command
-@app.route('/addcommand', methods = ['POST', 'GET'])
-def AddCommand():
-    if request.method == 'POST':
-        file = request.json
-        id = request.json['id']
-        user = request.json['user']
-        status= request.json['infos']
-        cost=  request.json['cost']
-        enter_date =  request.json['enter_date']
-        return_date =  request.json['return_date']
-        discount =  request.json['discount']
-        date = request.json['date_']
-        #date =  request.json['enter_date']
-        services_quantity =  request.json['services_quantity']
-        #agent = request.json['agent']
-        enter_time = request.json['enter_time']
-        return_time = request.json['return_time']
-        sub_total = request.json['sub_total']
-        delivery = request.json['delivery']
-        cur = mysql.new_cursor(dictionary = True)
-        cur.execute(f"INSERT INTO `appexpress`.`command` (`id`, `infos`, `cost`, `enter_date`, `return_date`,`discount`, `services_quantity`, `user`, `enter_time`, `return_time`, `sub_total`, `delivery`) VALUES ('{id}', '{status}', '{cost}', '{enter_date}', '{return_date}', '{discount}', '{services_quantity}', '{user}', '{enter_time}', '{return_time}','{sub_total}','{delivery}')")
-        #cur.execute("INSERT INTO `appexpress`.`command_has_user` (`command_id`, `user`) VALUES ('"+str(id)+"', '"+str(user)+"')")
-        mysql.connection.commit()
-        id = cur.lastrowid
-        #Add services_quatity elements to command_service table
-        for i in range(len(services_quantity.split(','))):
-            cur.execute(f"INSERT INTO `appexpress`.`command_service` (`command_id`, `service_id`, `quantity`) VALUES ('{id}', '{services_quantity.split(',')[i].split(':')[0]}', '{services_quantity.split(',')[i].split(':')[1]}')")
-            mysql.connection.commit()
-        #Create command recap in html array
-        command_recap = f"<table><tr><td>Numéro de commande</td><td>{id}</td></tr><tr><td>Prix</td><td>{cost}</td></tr><tr><td>Date de prise en charge</td><td>{enter_date}</td></tr><tr><td>Date de retour</td><td>{return_date}</td></tr><tr><td>Quantite de services</td><td>{services_quantity}</td></tr><tr><td>Heure de prise en charge</td><td>{enter_time}h-{int(enter_time) +1 }h</td></tr><tr><td>Heure de retour</td><td>{return_time}h-{int(return_time) +1 }h</td></tr><tr><td>Sous-total</td><td>{sub_total}</td></tr><tr><td>Livraison</td><td>{delivery}</td></tr></table> <i>Ceci est un mail factice pour tests de version alpha</i>"
-        #Get user infos
-        cur.execute(f"SELECT * FROM appexpress.user WHERE id = '{user}'")
-        a = cur.fetchall()
-        #Get services info
-        #Write mail
-        command_recap = f"<table><tr><td>Numéro de commande</td><td>{id}</td></tr><tr><td>Prix</td><td>{cost}€</td></tr><tr><td>Date de prise en charge</td><td>{enter_date}</td></tr><tr><td>Date de retour</td><td>{return_date}</td></tr><tr><td>Heure de prise en charge</td><td>{enter_time}h-{int(enter_time) +1 }h</td></tr><tr><td>Heure de retour</td><td>{return_time}h-{int(return_time) +1 }h</td></tr><tr><td>Sous-total</td><td>{sub_total}€</td></tr><tr><td>Livraison</td><td>{delivery}€</td></tr></table>"
-        #Send mail to user
-        #send_email(to_addr=a[0]["mail"], subject="Commande Ex-press Dry Clean", user_name=(a[0]["name"] +" "+ a[0]["surname"]), email_type="command_validation", command_recap=command_recap)
-
-
-    return json.dumps(id)
-
-@app.route('/getserviceandcommand')
-def GetServiceAndCommand():
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute("SELECT * FROM appexpress.service_has_command")
-    a = cur.fetchall()
-    return json.dumps(a)
-
-@app.route('/addservicehascommand', methods = ['POST', 'GET'])
-def AddServiceHasCommand():
-    if request.method =='GET':
-        service = request.args.get('service')
-        commandid = request.args.get('command')
-        quantity = request.args.get('quantity')
-        cur = mysql.new_cursor()
-        cur.execute("INSERT INTO `appexpress`.`service_has_command` (`service_id`, `command_id`, `quantity`) VALUES ('"+str(service)+"', '"+str(commandid)+"', '"+str(quantity)+"');")
-        mysql.connection.commit()
-        return "True"
-
-@app.route('/getuserandcommand')
-def GetUserAndCommand():
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute("SELECT * FROM appexpress.command_has_user")
-    a = cur.fetchall()
-    return json.dumps(a)
-
-#Fonction qu ajoute une commande à un utilisateur 
-@app.route('/addcommandtouser', methods = ['POST','GET'])
-def AddCommandToUser():
-    user = request.json['user']
-    command = request.json['command_id']
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute("INSERT INTO `appexpress`.`command_has_user` (`command_id`, `user`) VALUES ('"+str(command)+"', '"+str(user)+"')")
-    mysql.connection.commit()
-    return "True"
-
-#Fonction qui recupère les horaires
-@app.route('/gettimes')
-def GetTimes():
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute("SELECT * FROM appexpress.times")
-    a = cursor.fetchall()
-    return json.dumps(a)
-
-
-
-#Fonction qui met à jour un horaire
-@app.route('/updatetime')
-def UpdateTimes():
-    id = request.json['id']
-    state = request.json['state']
-    day = request.json['day']
-    cursor = mysql.new_cursor()
-    cursor.execute("UPDATE `appexpress`.`times` SET `state` = '"+state+"' WHERE (`id` = '"+id+"');")
-    mysql.connection.commit()
-    return "True"
-
-#Fonction qui ajoute un horaire
-@app.route('/addtime', methods =['POST'])
-def AddTime():
-    if request.method == 'POST':
-        creneau = request.json['creneau']
-        state = request.json['state']
-        day = request.json['day']
-        program = request.json['program']
-        cursor = mysql.new_cursor()
-        cursor.execute("INSERT INTO `appexpress`.`times` (`creneau`, `state`,`day`) VALUES ('"+str(creneau)+"', '"+str(state)+"','"+str(day)+"')")
-        mysql.connection.commit()
-        return "True" 
-
- 
-#Fonction qui ajoute un Coupon
-@app.route('/addcoupon', methods =['POST'])
-def AddCoupon():
-    if request.method == 'POST':
-        codeCoupon = request.json['code']
-        cost = request.json['discount']
-        cursor = mysql.new_cursor()
-        cursor.execute(f"INSERT INTO `appexpress`.`coupon` (`code`, `discount`) VALUES ('{codeCoupon}', '{cost}')")
-        mysql.connection.commit()
-        return "True"
-
-#Fonction qui supprime un coupon
-@app.route('/deletecoupon', methods =['POST'])
-def DeleteCoupon():
-    if request.method == 'POST':
-        id = request.json['id']
-        cursor = mysql.new_cursor()
-        cursor.execute(f"DELETE FROM `appexpress`.`coupon` WHERE (`id` = '{id}')")
-        mysql.connection.commit()
-        return "True"
-    
-
-#Fonction qui recupère les coupons
-@app.route('/getcoupons')
-def GetCoupons():
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute("SELECT * FROM appexpress.coupon")
-    a = cursor.fetchall()
-    return json.dumps(a, default=defaultconverter)
-
-
-#Fonction qui supprime un utilisateur 
-@app.route('/deleteuser', methods = ['POST','GET'])
-def DeleteUser():
-    if request.method == 'POST':
-        user = request.json['id']
-        #Get user datas
-        mail = request.json['mail']
-        
-        cursor = mysql.new_cursor(dictionary = True)
-        cursor.execute("DELETE FROM `appexpress`.`user` WHERE (`id` = '"+str(user)+"')")
-        mysql.connection.commit()
-        #send mail that we are sorry
-        #send_email(to_addr=mail, subject="Au revoir", user_name=(a[0]["name"]), email_type="command_validation", command_recap=command_recap)
-
-    return "True"
-
 #Fonction qui supprime un service 
 @app.route('/deleteservice', methods = ['POST','GET'])
 def DeleteService():
@@ -1217,53 +987,6 @@ def DeleteService():
         service = request.json['id']
         cursor = mysql.new_cursor(dictionary = True)
         cursor.execute("DELETE FROM `appexpress`.`service` WHERE (`id` = '"+str(service)+"')")
-        mysql.connection.commit()
-    return "True"
-
-
-
-#Fonction qui permet une connexion securisée 
-@app.route('/secureconnection', methods = ['POST','GET'])
-def SecureConnection():
-    if request.method == 'POST':
-        username = request.form['name']
-        password = request.form['password']
-        cursor = mysql.new_cursor(dictionary = True)
-        cursor.execute("SELECT password FROM appexpress.user WHERE name = '"+username+"'")
-        result = cursor.fetchall()
-        if password == result[0]["password"]:     
-            return "True"
-        else: return "False"
-
-#Fonction qui modifie une commande 
-@app.route('/updatecommand', methods = ['POST'])
-def UpdateCommand():
-    Id = request.json['id']
-    infos = request.json['infos']
-    dateIn = request.json['enter_date']
-    dateOut = request.json['return_date']
-    cost = request.json['cost']
-    discount = request.json['discount']
-    services_quantity = request.json['services_quantity']
-    date = request.json['date_']
-    agent = request.json['agent']
-    user = request.json['user']
-    enter_time = request.json['enter_time']
-    return_time = request.json['return_time']
-    sub_total = request.json['sub_total']
-    delivery = request.json['delivery']
-    cursor = mysql.new_cursor()
-    cursor.execute(f"UPDATE `appexpress`.`command` SET `cost` = '{cost}', `enter_date` = '{dateIn}', `return_date` = '{dateOut}', `services_quantity` = '{services_quantity}', `agent` = '{agent}', `enter_time` = '{enter_time}', `return_time` = '{return_time}', `sub_total` = '{sub_total}', `delivery` = '{delivery}' WHERE (`id` = '{Id}');")
-    mysql.connection.commit()
-    return "True"
-
-#Fonction qui supprime une commande
-@app.route('/deletecommand', methods = ['POST','GET'])
-def DeleteCommand():
-    if request.method == 'POST':
-        command = request.json['id']
-        cursor = mysql.new_cursor(dictionary = True)
-        cursor.execute("DELETE FROM `appexpress`.`command` WHERE (`id` = '"+str(command)+"')")
         mysql.connection.commit()
     return "True"
 
@@ -1278,13 +1001,6 @@ def get_current_time():
 def unidecode(text):
     return unidecode.unidecode(text)
 
-"DELETE FROM `appexpress`.`service` WHERE (`id` = '5');"
-
-""" Client ADD 
-INSERT INTO `appexpress`.`client` (`ID_CLIENT`, `NAME_CLIENT`, `surname_CLIENT`, `EMAIL_CLIENT`, `ADDRESS_CLIENT`, `PHONE_CLIENT`, `PASSWORD_CLIENT`) VALUES ('hean_client20', 'Hean', 'client', 'jhubertmillenium@gmail.com', 'Rue des Allies 93', '486650303', 'hean2000');
-"""
-path = os.path.abspath('/var/www/express/static/images')
-#path = os.path.abspath('static/images/')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif','pdf','doc','docx'}
 
 
@@ -1300,11 +1016,7 @@ def upload_image():
     file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
     return 'File uploaded successfully'
 
-
-
 # Servir une Image  =======================================================================
-
-
 
 @app.route('/getimage')
 def get_image(name:str = ""):
@@ -1339,25 +1051,6 @@ def get_all_images():
             result = fullname
             send_file(result, mimetype=magic.from_file(result, mime=True))
 
-
-# ------ database management ------
-#fill the database
-@app.route('/filldatabase')
-def fill_database():
-    cursor = mysql.new_cursor( dictionary = True)
-    # get stores
-    cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.store")
-    stores = cursor.fetchall()
-    cursor.reset()
-    # get services
-    cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.service")
-    services = cursor.fetchall()
-    #fill the store_has_service table
-    for service in services:
-        for store in stores:
-            cursor.reset()
-            cursor.execute(f"INSERT INTO `{app.config['MYSQL_DB']}`.`store_has_service` (`store_name`, `service_name`,`cost`) VALUES ('{store['name']}', '{service['name']}', '5.00');")
-            mysql.connection.commit()
 
 # ------ Dictionaries ------
 # Have to use Fr, En, Nl & It

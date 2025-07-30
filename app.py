@@ -882,7 +882,6 @@ def localization(lang = 'fr', subpage = None ):
     services = GetData('full','service')
     categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
     available_store = [ x for x in stores if x['name'] == subpage][-1] if subpage else None
-
     return render_template('localization.html', lang = session['lang'], dictionary = dictionary[lang], stores = stores, selected_store = available_store, current_page = 'localization', services = services, categories = categories)
 
 

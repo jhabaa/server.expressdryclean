@@ -237,12 +237,6 @@ class fakefloat(float):
     def __repr__(self):
         return str(self._value)
 
-class Address:
-    def __init__(self, adress, longitude, latitude):
-        self.adress = adress
-        self.longitude = longitude
-        self.latitude = latitude
-
 #To Convert DateTime
 def defaultconverter(o):
     if isinstance(o, datetime.datetime):
@@ -287,27 +281,6 @@ def send_email(to_addr, subject, content:str, attachment_path : str = None, name
         writer = csv.writer(f)
         writer.writerow([datetime.datetime.now().strftime("%d/%m/%Y - %H:%M:%S"), to_addr, subject, name, content])
         f.close()
-
-#================================================================================================
-#====================================== Days off management =====================================
-
-daysOff = [] # Array of date which are days off
-
-#Function which return true if a date is in the daysOff dict
-def LookForDayOff(date):
-    for i in range(len(daysOff)):
-        if daysOff[i]['date'] == date:
-            return True
-    return False
-
-#Function to get days off from database
-def GetDaysOff():
-    daysOff.clear()
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.daysoff")
-    a = cur.fetchall()
-    for i in a:
-        daysOff.append({"id":i["id"],"date":i["date"]})
 
 #================================== Database entries ==========================================
 #All entries in the database
@@ -434,141 +407,11 @@ def Operate(model:str):
 
     return "True"
 
-#Function to add a day off
-@app.route('/adddayoff', methods=['POST'])
-def AddDayOff():
-    if request.method == 'POST':
-        date = request.json['date']
-        cur = mysql.new_cursor(dictionary = True)
-        print(date)
-        cur.execute(f"INSERT INTO `appexpress`.`daysoff` (`date`) VALUES ('{date}')")
-        mysql.connection.commit()
-        #GetDaysOff()
-        return json.dumps("ok")
-
-#Function to remove a day off
-@app.route('/removedayoff', methods=['POST'])
-def RemoveDayOff():
-    if request.method == 'POST':
-        date = request.json['date']
-        cur = mysql.new_cursor(dictionary = True)
-        cur.execute(f"DELETE FROM appexpress.daysoff WHERE date = '{date}'")
-        mysql.connection.commit()
-        GetDaysOff()
-        return "ok"
-
-#Function to get days off
-@app.route('/getdaysoff', methods=['GET'])
-def GetDaysOffRoute():
-    if request.method == 'GET':
-        GetDaysOff()
-        return json.dumps(daysOff, indent=4, default=defaultconverter)
-
-#Function to add multiple days off
-@app.route('/addmultipledaysoff', methods=['POST'])
-def AddMultipleDaysOff():
-    if request.method == 'POST':
-        dates = request.json['dates']
-        cur = mysql.new_cursor(dictionary = True)
-        for date in dates:
-            cur.execute(f"INSERT INTO appexpress.daysoff (date) VALUES ('{date}')")
-        GetDaysOff()
-        return "ok"
-
 #================================================================================================
 #========================================Functions===============================================
 
-#Function which take a datetime and return availables hours to pass a command
-def GetAvailableHours(date):
-    #If date is in the daysoff dictionary, just return empty
-    if LookForDayOff(date):
-        return []
-    
-    workingHours = [9,10,11,12,13,14,15,16,17]
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute(f"SELECT enter_time,return_time FROM {app.config['MYSQL_DB']}.command WHERE enter_date = '{date}'")
-    a = cur.fetchall()
-    #create a list of hours which are already booked
-    bookedHours = []
-    for i in a:
-        bookedHours.append(int(i["enter_time"]))
-        bookedHours.append(int(i["return_time"]))
-    #remove booked hours from working hours
-    for i in bookedHours:
-        if i in workingHours and bookedHours.count(i) >= 2:
-            workingHours.remove(i)
-    #remoce value in workingHours if it appear two times in a
-    return workingHours
-
-
-
 # Read delivery prices from CSV file
 deliveryPrices = []
-"""
-with open(f'{settingPath}/deliveryPrices.csv', 'w', newline='') as f:
-    fieldnames = ['ZIPCODE', 'PRICE']
-
-    reader = csv.reader(f)
-    
-    f.close()
-"""
-# add delivery price to csv
-"""
-with open(f'{settingPath}/deliveryPrices.csv', 'a') as f:
-    writer = csv.writer(f)
-    writer.writerow(['1410', '9.00'])
-    writer.writerow(['1560', '9.00'])
-    writer.writerow(['1000', '3.99'])
-    writer.writerow(['1190', '3.99'])
-    writer.writerow(['1200', '3.99'])
-    writer.writerow(['1050', '3.99'])
-    f.close()
-"""
-#Price by Km
-price_by_km = float(0.30)
-#Function to calculate the cost according to the distance between to ZIPCODES
-"""
-def GetDistanceToGo(adress):
-    end_point = geolocator.geocode(adress)
-    end_point = (end_point.latitude, end_point.longitude)
-    return round(distance.distance(start_point, end_point).km, 2)
-"""
-
-
-#function to check a coupon and return the value
-@app.route('/checkcoupon', methods=['POST'])
-def Check_Coupon():
-    if request.method == 'POST':
-        cost = 0.00
-        cursor = mysql.new_cursor(dictionary = True)
-        code = request.json['code']
-        cursor.execute(f"SELECT * FROM appexpress.coupon WHERE code = '{code}'")
-        a = cursor.fetchall()
-        return json.dumps(a, indent=4, default=defaultconverter)
-
-@app.route('/getdeliveryprice', methods=['POST'])
-def GetdeliveryPrice():
-    if request.method == 'POST':
-        
-        return json.dumps(4151, indent=4, default=defaultconverter)
-
-
-@app.route('/getavailablehours')
-def GetAvailableHoursRoute():
-    date = request.args.get('date')
-    return (json.dumps(GetAvailableHours(date), indent=4))
-
-@app.route('/reset')
-def ResetPassword():
-    mail = request.args.get('mail')
-    print("Voici le mail client = " + mail)
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute(f"SELECT * FROM appexpress.user WHERE mail = '"+ mail +"'")
-    response = cursor.fetchone()
-    print("La réponse est" + str(response["name"] + str(response["password"])))
-    #send_email(to_addr=mail, subject="Mot de passe Ex-press Dry Clean", user_name=(response["name"]), email_type="passwordReset", user_recap=response["password"])
-    return "Mot de passe envoyé"
-
 
 @app.route('/')
 def index():
@@ -1055,18 +898,6 @@ def GetSewingByID():
     c = json.dumps(a,indent=4, default=defaultconverter)
     return (c)
 
-#Get all commands from a user
-@app.route('/getusercommands', methods=['POST'])
-def GetUserCommands():
-    if request.method == 'POST':
-        id = request.json["id"]
-        cur = mysql.new_cursor(dictionary = True)
-        cur.execute(f"SELECT * FROM appexpress.command WHERE user = '{id}'")
-        a = cur.fetchall()
-        c = json.dumps(a, default=defaultconverter)
-        mysql.connection.commit()
-        return (c)
-
 @app.route('/addservice', methods=['POST', 'GET'])
 def AddService():
     if request.method == 'POST':
@@ -1098,51 +929,6 @@ def Update_Service():
         mysql.connection.commit()
         return "True"
     
-
-#Connection Config
-@app.route('/connect', methods = ['POST', 'GET'])
-def secureConnection():
-    if request.method == 'POST':
-        username = request.json['name']
-        password = request.json['password']
-        email = request.json['mail']
-        cur = mysql.new_cursor(dictionary=True)
-        #Check if mail ou username can match depending on what user entered
-        print(f"Connection for user {username} and password {password}")
-        if username != "":
-            cur.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.user WHERE name = '{username}' and password = '{password}'")
-        elif email != "":
-            cur.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.user WHERE mail = '{email}' and password = '{password}'")
-        a = cur.fetchone()
-        print(a)
-        return json.dumps(a)
-
-#Connection with the server. username exist ? return the password otherwise return nil      
-@app.route('/checkuser', methods = ['POST', 'GET'])
-def check_user():
-    if request.method == 'POST':
-        username = request.json['name']
-        email = request.json['mail']
-        cur =  mysql.new_cursor(dictionary=True)
-        result = ""
-        if username != "":
-            #Get the password associate 
-            cur.execute(f"SELECT password FROM appexpress.user WHERE name = '{username}'")
-        elif email != "":
-            cur.execute(f"SELECT password FROM appexpress.user WHERE mail = '{email}'")
-        
-        result = cur.fetchone()
-        return result
-
-#Fonction qui supprime un service 
-@app.route('/deleteservice', methods = ['POST','GET'])
-def DeleteService():
-    if request.method == 'POST':
-        service = request.json['id']
-        cursor = mysql.new_cursor(dictionary = True)
-        cursor.execute("DELETE FROM `appexpress`.`service` WHERE (`id` = '"+str(service)+"')")
-        mysql.connection.commit()
-    return "True"
 
 #Return server time
 @app.route('/time')

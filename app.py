@@ -134,7 +134,7 @@ def requires_scope(required_scope:str) -> bool:
         required_scope(str): The scope required to acess ressource
     """
     token = get_token_auth_header()
-    unverified_claims = jwt.get_unverified_claims(token)
+    unverified_claims = jwt.decode(token, key=app.config['APP_SECRET_KEY'], algorithms=[app.config['ALGORITHMS']], audience=app.config['AUTH0_AUDIENCE'], issuer=f"https://{app.config['AUTH0_DOMAIN']}/")
     if unverified_claims.get("scope"):
         token_scopes = unverified_claims["scope"].split()
         for token_scope in token_scopes:
@@ -147,6 +147,53 @@ def requires_scope(required_scope:str) -> bool:
 #JWT
 JWKS_URL = f"https://{app.config['AUTH0_DOMAIN']}/.well-known/jwks.json"
 
+def get_kid_from_jwt_token(token:str) -> str:
+    """
+    Extracts the Key ID (kid) from the JWT token header
+    Args:
+        token(str): The JWT token
+    Returns:
+        str: The Key ID (kid) from the JWT token header
+    """
+    try:
+        header = jwt.get_unverified_header(token)
+        return header['kid']
+    except jwt.JWTError as e:
+        raise AuthError({"code":"invalid_header", "description":"No appropriate key"}, 401) from e
+    
+def decode_jwt_token(token:str, secret:dict) -> dict[str, any]:
+    """
+    Decodes the JWT token using the provided secret
+    Args:
+        token(str): The JWT token
+        secret(dict): The secret used to decode the JWT token
+    Returns:
+        dict[str, any]: The decoded JWT token payload
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=app.config['ALGORITHMS'],
+            audience=app.config['AUTH0_AUDIENCE'],
+            issuer=f"https://{app.config['AUTH0_DOMAIN']}/"
+        )
+        return payload
+    except jwt.ExpiredSignatureError as expired_error:
+        raise AuthError({"code":"token_expired", "description":"Token is expired"}, 401) from expired_error
+    except jwt.JWTClaimsError as jwt_claims_error:
+        raise AuthError({"code":"invalid_claims", "description":
+                         "incorrect claims,"
+                         "please check the audience and issuer whixh was"
+                         f" audience: {app.config['AUTH0_AUDIENCE']} and "
+                         f"Issuer : https://{app.config['AUTH0_DOMAIN']}/"}, 401) from jwt_claims_error
+    except Exception as exc:
+        raise AuthError({"code":"invalid_header",
+                         "description":
+                         "Unable to parse authentification"
+                         "token."}, 401) from exc
+
+
 #Create a JWT require decorator
 def requires_auth(func):
     """
@@ -155,57 +202,25 @@ def requires_auth(func):
     @wraps(func)
     def decorated(*args, **kwargs):
         token = get_token_auth_header()
-        jsonurl = urlopen(JWKS_URL)
-        jwks = json.loads(jsonurl.read())
-        try:
-            unverified_header = jwt.get_unverified_header(token)
-        except jwt.JWTError as jwt_error:
-            raise AuthError({"code":"invalid_header", "description":
-                             "Invalid Header."
-                             f"Use an {app.config['ALGORITHMS']} signed JWT Access Token"}, 401) from jwt_error
+        jwks = json.loads(urlopen(JWKS_URL).read())
         
-        if unverified_header["alg"] != app.config['ALGORITHMS']:
-            raise AuthError({"code":"invalid_header", "description":
-                             "Invalid Header."
-                             f"Use an {app.config['ALGORITHMS']} signed JWT Access Token"}, 401)
-        
-        rsa_key = {}
+        if not jwks or 'keys' not in jwks or len(jwks['keys']) == 0:
+            raise AuthError({"code":"invalid_header", "description":"Unable to find appropriate key"}, 401)
+        # Get secret key from JWKS
+        secret = {}
         for key in jwks["keys"]:
-            if key["kid"] == unverified_header["kid"]:
-                rsa_key = {
+            if key["kid"] == get_kid_from_jwt_token(token):
+                secret = {
                     "kty": key["kty"],
                     "kid": key["kid"],
                     "use": key["use"],
                     "n": key["n"],
                     "e": key["e"]
                 }
+                break
         
-        if rsa_key:
-            try: 
-                payload = jwt.decode(
-                    token,
-                    rsa_key,
-                    algorithms=app.config['ALGORITHMS'],
-                    audience=app.config['AUTH0_AUDIENCE'],
-                    issuer=f"https://{app.config['AUTH0_DOMAIN']}/"
-                )
-            except jwt.ExpiredSignatureError as expired_error:
-                raise AuthError({"code":"token_expired", "description":"Token is expired"}, 401) from expired_error
-            
-            except jwt.JWTClaimsError as jwt_claims_error:
-                raise AuthError({"code":"invalid_claims", "description":
-                                 "incorrect claims,"
-                                 "please check the audience and issuer whixh was"
-                                 f" audience: {app.config['AUTH0_AUDIENCE']} and "
-                                 f"Issuer : https://{app.config['AUTH0_DOMAIN']}/"}, 401) from jwt_claims_error
-
-            except Exception as exc:
-                raise AuthError({"code":"invalid_header",
-                                 "description":
-                                 "Unable to parse authentification"
-                                 "token."}, 401) from exc
-            
-            _request_ctx_stack.top.current_user = payload
+        if secret:
+            _request_ctx_stack.top.current_user = decode_jwt_token(token, secret)
             return func(*args, **kwargs)
         raise AuthError({"code":"invalid_header", "description":"Unable to find appropriate key"}, 401)
     return decorated

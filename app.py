@@ -20,7 +20,7 @@ import datetime
 import os
 
 #languages management
-from flask_babel import Babel, gettext, refresh, _
+from flask_babel import Babel, refresh, _
 
 #I use Polib to read babel files
 import polib
@@ -28,20 +28,17 @@ import polib
 import subprocess
 
 from unicodedata import decimal
-#from urllib import request
-from flask import Flask, jsonify, request_started, request_tearing_down, send_file, session, flash
+
+from flask import Flask, jsonify, send_file, session, flash
 from flask import render_template, g, Response, _request_ctx_stack
 from flask import request, url_for,redirect
 from flask_mysql_connector import MySQL
-#import simplejson as js
+
 import json as json
 import magic
 import decimal
 from werkzeug.utils import secure_filename
-from werkzeug.datastructures import  FileStorage
-#import geopy
-#from geopy import distance
-#from geopy.geocoders import Nominatim
+
 import csv
 
 
@@ -137,7 +134,7 @@ def requires_scope(required_scope:str) -> bool:
         required_scope(str): The scope required to acess ressource
     """
     token = get_token_auth_header()
-    unverified_claims = jwt.get_unverified_claims(token)
+    unverified_claims = jwt.decode(token, key=app.config['APP_SECRET_KEY'], algorithms=[app.config['ALGORITHMS']], audience=app.config['AUTH0_AUDIENCE'], issuer=f"https://{app.config['AUTH0_DOMAIN']}/")
     if unverified_claims.get("scope"):
         token_scopes = unverified_claims["scope"].split()
         for token_scope in token_scopes:
@@ -150,6 +147,53 @@ def requires_scope(required_scope:str) -> bool:
 #JWT
 JWKS_URL = f"https://{app.config['AUTH0_DOMAIN']}/.well-known/jwks.json"
 
+def get_kid_from_jwt_token(token:str) -> str:
+    """
+    Extracts the Key ID (kid) from the JWT token header
+    Args:
+        token(str): The JWT token
+    Returns:
+        str: The Key ID (kid) from the JWT token header
+    """
+    try:
+        header = jwt.get_unverified_header(token)
+        return header['kid']
+    except jwt.JWTError as e:
+        raise AuthError({"code":"invalid_header", "description":"No appropriate key"}, 401) from e
+    
+def decode_jwt_token(token:str, secret:dict) -> dict[str, any]:
+    """
+    Decodes the JWT token using the provided secret
+    Args:
+        token(str): The JWT token
+        secret(dict): The secret used to decode the JWT token
+    Returns:
+        dict[str, any]: The decoded JWT token payload
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=app.config['ALGORITHMS'],
+            audience=app.config['AUTH0_AUDIENCE'],
+            issuer=f"https://{app.config['AUTH0_DOMAIN']}/"
+        )
+        return payload
+    except jwt.ExpiredSignatureError as expired_error:
+        raise AuthError({"code":"token_expired", "description":"Token is expired"}, 401) from expired_error
+    except jwt.JWTClaimsError as jwt_claims_error:
+        raise AuthError({"code":"invalid_claims", "description":
+                         "incorrect claims,"
+                         "please check the audience and issuer whixh was"
+                         f" audience: {app.config['AUTH0_AUDIENCE']} and "
+                         f"Issuer : https://{app.config['AUTH0_DOMAIN']}/"}, 401) from jwt_claims_error
+    except Exception as exc:
+        raise AuthError({"code":"invalid_header",
+                         "description":
+                         "Unable to parse authentification"
+                         "token."}, 401) from exc
+
+
 #Create a JWT require decorator
 def requires_auth(func):
     """
@@ -158,57 +202,25 @@ def requires_auth(func):
     @wraps(func)
     def decorated(*args, **kwargs):
         token = get_token_auth_header()
-        jsonurl = urlopen(JWKS_URL)
-        jwks = json.loads(jsonurl.read())
-        try:
-            unverified_header = jwt.get_unverified_header(token)
-        except jwt.JWTError as jwt_error:
-            raise AuthError({"code":"invalid_header", "description":
-                             "Invalid Header."
-                             f"Use an {app.config['ALGORITHMS']} signed JWT Access Token"}, 401) from jwt_error
+        jwks = json.loads(urlopen(JWKS_URL).read())
         
-        if unverified_header["alg"] != app.config['ALGORITHMS']:
-            raise AuthError({"code":"invalid_header", "description":
-                             "Invalid Header."
-                             f"Use an {app.config['ALGORITHMS']} signed JWT Access Token"}, 401)
-        
-        rsa_key = {}
+        if not jwks or 'keys' not in jwks or len(jwks['keys']) == 0:
+            raise AuthError({"code":"invalid_header", "description":"Unable to find appropriate key"}, 401)
+        # Get secret key from JWKS
+        secret = {}
         for key in jwks["keys"]:
-            if key["kid"] == unverified_header["kid"]:
-                rsa_key = {
+            if key["kid"] == get_kid_from_jwt_token(token):
+                secret = {
                     "kty": key["kty"],
                     "kid": key["kid"],
                     "use": key["use"],
                     "n": key["n"],
                     "e": key["e"]
                 }
+                break
         
-        if rsa_key:
-            try: 
-                payload = jwt.decode(
-                    token,
-                    rsa_key,
-                    algorithms=app.config['ALGORITHMS'],
-                    audience=app.config['AUTH0_AUDIENCE'],
-                    issuer=f"https://{app.config['AUTH0_DOMAIN']}/"
-                )
-            except jwt.ExpiredSignatureError as expired_error:
-                raise AuthError({"code":"token_expired", "description":"Token is expired"}, 401) from expired_error
-            
-            except jwt.JWTClaimsError as jwt_claims_error:
-                raise AuthError({"code":"invalid_claims", "description":
-                                 "incorrect claims,"
-                                 "please check the audience and issuer whixh was"
-                                 f" audience: {app.config['AUTH0_AUDIENCE']} and "
-                                 f"Issuer : https://{app.config['AUTH0_DOMAIN']}/"}, 401) from jwt_claims_error
-
-            except Exception as exc:
-                raise AuthError({"code":"invalid_header",
-                                 "description":
-                                 "Unable to parse authentification"
-                                 "token."}, 401) from exc
-            
-            _request_ctx_stack.top.current_user = payload
+        if secret:
+            _request_ctx_stack.top.current_user = decode_jwt_token(token, secret)
             return func(*args, **kwargs)
         raise AuthError({"code":"invalid_header", "description":"Unable to find appropriate key"}, 401)
     return decorated
@@ -239,21 +251,6 @@ class fakefloat(float):
         self._value = value
     def __repr__(self):
         return str(self._value)
-
-class Address:
-    def __init__(self, adress, longitude, latitude):
-        self.adress = adress
-        self.longitude = longitude
-        self.latitude = latitude
-
-settingPath = os.path.abspath('/var/www/express/static')
-settingPath = os.path.abspath('./static')
-#Set EXPRESS ADRESS
-"""
-geolocator = Nominatim(user_agent="express_dry_clean")
-express_adress = geolocator.geocode("rue des allies 93 1190 Forest")
-start_point = (express_adress.latitude, express_adress.longitude)   
-"""
 
 #To Convert DateTime
 def defaultconverter(o):
@@ -295,56 +292,10 @@ def send_email(to_addr, subject, content:str, attachment_path : str = None, name
     server.sendmail(app.config["NOREPLY_EMAIL"], to_addr, msg.as_string())
     server.quit()
     #Add mail to CSV file
-    with open(f'{settingPath}/mails.csv', 'a') as f:
+    with open(f'{app.config['ROOT_FOLDER']}/mails.csv', 'a') as f:
         writer = csv.writer(f)
         writer.writerow([datetime.datetime.now().strftime("%d/%m/%Y - %H:%M:%S"), to_addr, subject, name, content])
         f.close()
-
-"""
-with open(f'{settingPath}/address.csv', 'r', encoding="latin-1") as address:
-        reader = csv.DictReader(address)
-        for row in reader:
-            all_address.append(Address(adress=f'{row["address"]}', latitude=row["latitude"], longitude=row["longitude"]))
-        
-        # close
-        address.close()
-"""
-# send address array
-@app.route('/getaddress', methods=['POST'])
-def searchAddress():
-    if request.method == 'POST':
-        result = []
-        a = request.json['adress']
-        for df in read_csv(f"{settingPath}/address.csv"):
-            #df = df[['address', 'longitude', 'latitude']]
-            # Sort the dataframe by Name
-            df = df[df['address'].str.contains(a, case=False)]
-            for index, row in df.iterrows():
-                result.append(Address(row['address'], row['longitude'], row['latitude']))
-        
-        return json.dumps(result[:5], indent=4, default=lambda o: o.__dict__, ensure_ascii=False)
-
-
-#================================================================================================
-#====================================== Days off management =====================================
-
-daysOff = [] # Array of date which are days off
-
-#Function which return true if a date is in the daysOff dict
-def LookForDayOff(date):
-    for i in range(len(daysOff)):
-        if daysOff[i]['date'] == date:
-            return True
-    return False
-
-#Function to get days off from database
-def GetDaysOff():
-    daysOff.clear()
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.daysoff")
-    a = cur.fetchall()
-    for i in a:
-        daysOff.append({"id":i["id"],"date":i["date"]})
 
 #================================== Database entries ==========================================
 #All entries in the database
@@ -376,7 +327,7 @@ command_service = Enum('command_service',[
 
 #==================================
 
-def FormatTextToMysql(a,sep):
+def format_to_mysql(a,sep):
     # if a is a number value, return it as it is
     if type(a) == int or type(a) == float:
         return a
@@ -389,7 +340,7 @@ def FormatTextToMysql(a,sep):
 @app.route('/getalldatas/<filetype>/<name>/')
 @app.route('/getalldatas/<filetype>/<name>/<where>/')
 @app.route('/getalldatas/<filetype>/<name>/<where>/<lang>/')
-def GetData(filetype:str  ,name: str, where = None, lang = None):
+def get_data(filetype:str  ,name: str, where = None, lang = None):
     cur = mysql.new_cursor(dictionary = True)
     # My plan here is to use RegEx with the where here to easily fetch commands for a specific month for example
     if where:
@@ -416,7 +367,7 @@ def escape (value : str):
 
 # Function to aperate - Create:Done
 @app.route('/api/<model>', methods=['POST','DELETE','PUT'])
-def Operate(model:str):
+def operate(model:str):
     cursor = mysql.new_cursor(dictionary = True, buffered = True)
     # Get primary Key
     cursor.execute(f"SHOW KEYS FROM {app.config['MYSQL_DB']}.{model} WHERE Key_name = 'PRIMARY'")
@@ -435,7 +386,7 @@ def Operate(model:str):
         cursor.close()
         cursor = mysql.new_cursor(dictionary = True, buffered = True)
         create = ", ".join([f"`{att}`" for att in request.json.keys()]) # Attributes here needs to be embeded in `` because they are reserved words in SQL
-        query = f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({create}) VALUES ({', '.join([f'{FormatTextToMysql(request.json[att],1)}' for att in request.json.keys()])})"
+        query = f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({create}) VALUES ({', '.join([f'{format_to_mysql(request.json[att],1)}' for att in request.json.keys()])})"
         #cursor.execute(f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({','.join(list(FormatTextToMysql(att,1) for att in attributes))}) VALUES ({','.join(list(FormatTextToMysql(val,2) for val in values))})")
         
         print(query)
@@ -448,7 +399,7 @@ def Operate(model:str):
         model_ID = list(cursor.column_names)[-1]
         cursor.close()
         cursor = mysql.new_cursor(dictionary = True, buffered = True)
-        cursor.execute(f"DELETE FROM {app.config['MYSQL_DB']}.{model} WHERE {primary_key} = {FormatTextToMysql(request.json[primary_key], 1)}")
+        cursor.execute(f"DELETE FROM {app.config['MYSQL_DB']}.{model} WHERE {primary_key} = {format_to_mysql(request.json[primary_key], 1)}")
         mysql.connection.commit()
         return "True"
     if request.method == "PUT":
@@ -458,8 +409,8 @@ def Operate(model:str):
             updates = ", ".join([f"{att} = {request.json[att]}" for att in request.json.keys() if att != primary_key])
             query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {request.json[primary_key]}"
         else:
-            updates = ", ".join([f"{att} = {FormatTextToMysql(request.json[att],1)}" for att in request.json.keys() if att != primary_key])
-            query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {FormatTextToMysql(request.json[primary_key],2)}"
+            updates = ", ".join([f"{att} = {format_to_mysql(request.json[att],1)}" for att in request.json.keys() if att != primary_key])
+            query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {format_to_mysql(request.json[primary_key],2)}"
         print(updates)
         print(query)
         
@@ -471,166 +422,11 @@ def Operate(model:str):
 
     return "True"
 
-# Function to test the connection
-@app.route('/test')
-def test():
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.user")
-    attributes = list(cursor.column_names)
-
-    print (attributes)
-    return json.dumps(cursor.fetchall(), indent=4, default=defaultconverter)
-
-#Function to add a day off
-@app.route('/adddayoff', methods=['POST'])
-def AddDayOff():
-    if request.method == 'POST':
-        date = request.json['date']
-        cur = mysql.new_cursor(dictionary = True)
-        print(date)
-        cur.execute(f"INSERT INTO `appexpress`.`daysoff` (`date`) VALUES ('{date}')")
-        mysql.connection.commit()
-        #GetDaysOff()
-        return json.dumps("ok")
-
-#Function to remove a day off
-@app.route('/removedayoff', methods=['POST'])
-def RemoveDayOff():
-    if request.method == 'POST':
-        date = request.json['date']
-        cur = mysql.new_cursor(dictionary = True)
-        cur.execute(f"DELETE FROM appexpress.daysoff WHERE date = '{date}'")
-        mysql.connection.commit()
-        GetDaysOff()
-        return "ok"
-
-#Function to get days off
-@app.route('/getdaysoff', methods=['GET'])
-def GetDaysOffRoute():
-    if request.method == 'GET':
-        GetDaysOff()
-        return json.dumps(daysOff, indent=4, default=defaultconverter)
-
-#Function to add multiple days off
-@app.route('/addmultipledaysoff', methods=['POST'])
-def AddMultipleDaysOff():
-    if request.method == 'POST':
-        dates = request.json['dates']
-        cur = mysql.new_cursor(dictionary = True)
-        for date in dates:
-            cur.execute(f"INSERT INTO appexpress.daysoff (date) VALUES ('{date}')")
-        GetDaysOff()
-        return "ok"
-
 #================================================================================================
 #========================================Functions===============================================
 
-#Function which take a datetime and return availables hours to pass a command
-def GetAvailableHours(date):
-    #If date is in the daysoff dictionary, just return empty
-    if LookForDayOff(date):
-        return []
-    
-    workingHours = [9,10,11,12,13,14,15,16,17]
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute(f"SELECT enter_time,return_time FROM {app.config['MYSQL_DB']}.command WHERE enter_date = '{date}'")
-    a = cur.fetchall()
-    #create a list of hours which are already booked
-    bookedHours = []
-    for i in a:
-        bookedHours.append(int(i["enter_time"]))
-        bookedHours.append(int(i["return_time"]))
-    #remove booked hours from working hours
-    for i in bookedHours:
-        if i in workingHours and bookedHours.count(i) >= 2:
-            workingHours.remove(i)
-    #remoce value in workingHours if it appear two times in a
-    return workingHours
-
-
-
 # Read delivery prices from CSV file
 deliveryPrices = []
-"""
-with open(f'{settingPath}/deliveryPrices.csv', 'w', newline='') as f:
-    fieldnames = ['ZIPCODE', 'PRICE']
-
-    reader = csv.reader(f)
-    
-    f.close()
-"""
-# add delivery price to csv
-"""
-with open(f'{settingPath}/deliveryPrices.csv', 'a') as f:
-    writer = csv.writer(f)
-    writer.writerow(['1410', '9.00'])
-    writer.writerow(['1560', '9.00'])
-    writer.writerow(['1000', '3.99'])
-    writer.writerow(['1190', '3.99'])
-    writer.writerow(['1200', '3.99'])
-    writer.writerow(['1050', '3.99'])
-    f.close()
-"""
-#Price by Km
-price_by_km = float(0.30)
-#Function to calculate the cost according to the distance between to ZIPCODES
-"""
-def GetDistanceToGo(adress):
-    end_point = geolocator.geocode(adress)
-    end_point = (end_point.latitude, end_point.longitude)
-    return round(distance.distance(start_point, end_point).km, 2)
-"""
-
-#Function to calculate cost delevery according the ZIP CODE
-def GetCostDelevery(code):
-    
-    # Look for code in deliveryPrices
-    with open(f'{settingPath}/deliveryPrices.csv', 'r') as f:
-        reader = csv.reader(f)
-        deliveryPrices = list(reader)
-        f.close()
-    for i in deliveryPrices:
-        if i[0] == code:
-            return i[1]
-        
-    # If code not found, return default price
-    return 0.00
-    #return decimal.Decimal(GetDistanceToGo(adress)*price_by_km).quantize(decimal.Decimal('.01'))
-
-#function to check a coupon and return the value
-@app.route('/checkcoupon', methods=['POST'])
-def Check_Coupon():
-    if request.method == 'POST':
-        cost = 0.00
-        cursor = mysql.new_cursor(dictionary = True)
-        code = request.json['code']
-        cursor.execute(f"SELECT * FROM appexpress.coupon WHERE code = '{code}'")
-        a = cursor.fetchall()
-        return json.dumps(a, indent=4, default=defaultconverter)
-
-@app.route('/getdeliveryprice', methods=['POST'])
-def GetdeliveryPrice():
-    if request.method == 'POST':
-        
-        return json.dumps(4151, indent=4, default=defaultconverter)
-
-
-@app.route('/getavailablehours')
-def GetAvailableHoursRoute():
-    date = request.args.get('date')
-    return (json.dumps(GetAvailableHours(date), indent=4))
-
-@app.route('/reset')
-def ResetPassword():
-    mail = request.args.get('mail')
-    print("Voici le mail client = " + mail)
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute(f"SELECT * FROM appexpress.user WHERE mail = '"+ mail +"'")
-    response = cursor.fetchone()
-    print("La réponse est" + str(response["name"] + str(response["password"])))
-    #send_email(to_addr=mail, subject="Mot de passe Ex-press Dry Clean", user_name=(response["name"]), email_type="passwordReset", user_recap=response["password"])
-    return "Mot de passe envoyé"
-
 
 @app.route('/')
 def index():
@@ -655,9 +451,9 @@ def home(lang = 'fr', subpage = None, store = None):
     
     print(getattr(g, 'user', None))
     #return str((GetCostDelevery("Rue Saint-germain 92 1410 Waterloo")*price_by_km).quantize(decimal.Decimal('.01')))
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
-    stores = GetData('full','store')
-    services = GetData('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
     return render_template('index.html', dictionary = dictionary[lang] , services = services, categories=categories, stores=stores, lang = session['lang'], current_page = 'home')
 
 @app.route('/<lang>/policy/')
@@ -665,9 +461,9 @@ def policy(lang = 'fr'):
     #set language
     session['lang'] = lang
     #Usefull for the header, since Flask ask fot it
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
-    stores = GetData('full','store')
-    services = GetData('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
     return render_template('policy.html', lang = session['lang'], categories = categories, stores = stores, services = services, current_page = 'policy')
 
 @app.route('/<lang>/terms/')
@@ -675,9 +471,9 @@ def terms(lang = 'fr'):
     #set language
     session['lang'] = lang
     #Usefull for the header, since Flask ask fot it
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
-    stores = GetData('full','store')
-    services = GetData('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
     return render_template('terms.html', lang = session['lang'], categories = categories, stores = stores, services = services, current_page = 'terms')
 
 @app.route('/<lang>/pricing/')
@@ -686,9 +482,9 @@ def terms(lang = 'fr'):
 def pricing(lang = 'fr', subpage = None, store = None):
     #set language
     session['lang'] = lang
-    services = GetData('full','service') # Get all services
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
-    services_in_store = GetData('full','store_has_service') # Get all services associates to all stores
+    services = get_data('full','service') # Get all services
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
+    services_in_store = get_data('full','store_has_service') # Get all services associates to all stores
 
     others_categories = [ x for x in categories if x['name'] != subpage]
     available_services = [ x for x in services if x['category_name'] == subpage]
@@ -698,7 +494,7 @@ def pricing(lang = 'fr', subpage = None, store = None):
     #   selected_category = { k.encode('utf-8'): v.encode('utf-8') for k, v in selected_category.items()}
     # Convert all informations in selectedCategory to utf-8
 
-    stores = GetData('full','store')
+    stores = get_data('full','store')
     selected_store = [ x for x in stores if x['name'] == store][-1] if store else None
     return render_template('pricing.html', lang = session['lang'], categories = categories, services_in_store = services_in_store, dictionary = dictionary[lang], category = subpage, other_categories = others_categories, services = None if len(available_services) <= 0 else available_services, selected_category = selected_category, stores = stores, selected_store = selected_store, current_page = 'pricing')
     
@@ -707,9 +503,9 @@ def pricing(lang = 'fr', subpage = None, store = None):
 def about(lang = 'fr', subpage = None):
     #set language
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
     return render_template('about.html', lang = session['lang'], dictionary = dictionary[lang], current_page = 'about', stores = stores, services = services, categories = categories)
 
 @app.route('/<lang>/collaborations/')
@@ -717,15 +513,15 @@ def about(lang = 'fr', subpage = None):
 def collaborations(lang = 'fr', subpage = None):
     #set language
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
     return render_template('collaborations.html', lang = session['lang'], dictionary = dictionary[lang], current_page = 'collaborations', stores = stores, services = services, categories = categories)
 
 @app.route('/submit_collaboration', methods=['POST'])
 def submit_collaboration():
     data = request.form
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
     availablesCategoriesNames = [ x['name'] for x in categories]
     #send mail to admin to inform him about the message
     company = data['company_name']
@@ -736,7 +532,7 @@ def submit_collaboration():
     message = data['message']
     recaptcha = data['g-recaptcha-response']
 
-    recaptchaResponse = checkReCaptcha(token = recaptcha)
+    recaptchaResponse = check_recaptcha(token = recaptcha)
 
     if (recaptchaResponse == False):
         flash(flash_dict[2], 'error')
@@ -808,9 +604,9 @@ def submit_collaboration():
 def career(lang = 'fr', subpage = None):
     #set language
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
     return render_template('career.html', lang = session['lang'], dictionary = dictionary[lang], current_page = 'career', stores = stores, services = services, categories = categories)
 
 @app.route('/submit_career', methods=['POST'])
@@ -824,7 +620,7 @@ def submit_career():
 
     recaptcha = data['g-recaptcha-response']
     print(data, flush = True)
-    recaptchaResponse = checkReCaptcha(token = recaptcha)
+    recaptchaResponse = check_recaptcha(token = recaptcha)
     is_invalid = email == None or name == None # Check if some datas are present 
     if (recaptchaResponse == False or is_invalid):
         flash(flash_dict[2], 'error')
@@ -891,9 +687,9 @@ def contact(lang = 'fr', subpage = None):
     greatings = _("Bonjour")
     #set language
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
     return render_template('contact.html', lang = session['lang'], dictionary = dictionary[lang], current_page = 'contact', stores = stores, services = services, categories = categories)
 
 
@@ -901,27 +697,26 @@ def contact(lang = 'fr', subpage = None):
 @app.route('/<lang>/delivery/<subpage>')
 def delivery(lang = 'fr', subpage = None ):
     session['lang'] = lang
-    params = GetData('full','params')[-1]
+    params = get_data('full','params')[-1]
     print(params)
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
     return render_template('delivery.html', params = params, lang = session['lang'], dictionary = dictionary[lang], current_page = 'delivery', stores = stores, services = services, categories = categories)   
 
 @app.route('/<lang>/localization/')
 @app.route('/<lang>/localization/<subpage>')
 def localization(lang = 'fr', subpage = None ):
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
     available_store = [ x for x in stores if x['name'] == subpage][-1] if subpage else None
-
     return render_template('localization.html', lang = session['lang'], dictionary = dictionary[lang], stores = stores, selected_store = available_store, current_page = 'localization', services = services, categories = categories)
 
 
 #Funtion to make a post to googleReCaptcha and return the response
-def checkReCaptcha(token:str , remoteip:str = None):
+def check_recaptcha(token:str , remoteip:str = None):
     key = app.config["RECAPTCHA_SERVER_KEY"]
     url = "https://www.google.com/recaptcha/api/siteverify"
     obj = {"secret":key, "response":token}
@@ -939,7 +734,7 @@ def chatwithus():
     message = data['subject']
     recaptcha = data['g-recaptcha-response']
     print(data, flush = True)
-    recaptchaResponse = checkReCaptcha(token = recaptcha)
+    recaptchaResponse = check_recaptcha(token = recaptcha)
 
     if (recaptchaResponse == False):
         flash(flash_dict[12], 'error')
@@ -980,7 +775,7 @@ def chatwithus():
 
 # Function to get the dictionary of a language
 @app.route('/api/getdictionary', methods=['GET'])
-def GetDictionary():
+def get_dictionary():
     lang = request.args.get('lang')
     #Get the babel .po
     po = polib.pofile(f"{app.config['BABEL_PO_FILES_PATH']}/{lang}/LC_MESSAGES/messages.po")
@@ -989,7 +784,7 @@ def GetDictionary():
 
 #Function to update a po file
 @app.route('/api/updatebabelpo', methods=['POST'])
-def updateBabelPo():
+def update_babel_po():
     print("Updating po file")
     lang = request.json['lang']
     translations = request.json['translations']
@@ -1005,7 +800,7 @@ def updateBabelPo():
 
 # Function to get server state (online or offline)
 @app.route('/getserverstate')
-def GetServerState():
+def get_server_state():
     return "Connected"
 
 import threading
@@ -1014,7 +809,7 @@ import threading
 @app.route('/hotrestartserver', methods=['GET'])
 @cross_origin(headers=['Content-Type', 'Authorization'])
 @requires_auth
-def RestartServer():
+def restart_server():
     def restart():
         result = subprocess.run(["sudo","systemctl", "restart", f"{app.config['SERVICE_NAME']}"], check=True, capture_output=True, text=True)
     
@@ -1035,7 +830,7 @@ def updatewebsitedictionnary():
 
 # function to update the flask babel dictionnary from the app
 @app.route('/api/updatebabelpot', methods=['POST'])
-def updateBabel():
+def update_babel():
     new_translations = request.json["translations"] # get new translations
 
     if not new_translations:
@@ -1058,7 +853,7 @@ def updateBabel():
 
 #Function to get all dictionnary words... the pot file
 @app.route('/api/getpot')
-def getPot():
+def get_pot():
     pot = polib.pofile(f"{app.config['ROOT_FOLDER']}/messages.pot")
     t = {entry.msgid: entry.msgstr for entry in pot}
     return jsonify(t)
@@ -1079,7 +874,7 @@ def show_sewing():
 
 #Get settings
 @app.route('/getsettings')
-def GetSettings():
+def get_settings():
     cur = mysql.new_cursor(dictionary = True)
     cur.execute("SELECT * FROM appexpress.settings")
     a = cur.fetchone()
@@ -1088,7 +883,7 @@ def GetSettings():
 
 #Get params {id, tarif_bruxelles, tarif_brabant, tarif_km}
 @app.route('/getparams')
-def GetParams():
+def get_params():
     cur = mysql.new_cursor(dictionary = True)
     cur.execute("SELECT * FROM appexpress.params")
     a = cur.fetchone()
@@ -1097,7 +892,7 @@ def GetParams():
 
 #Update Params
 @app.route('/updateparams', methods=['POST'])
-def UpdateParams():
+def put_params():
     if request.method == 'POST':
         tarif_bruxelles = request.json['tarif_bruxelles']
         tarif_brabant = request.json['tarif_brabant']
@@ -1110,7 +905,7 @@ def UpdateParams():
 
 #Get service by ID
 @app.route('/getservicebyid')
-def GetSewingByID():
+def get_service_by_id():
     id_ = request.args.get("id")
     cur = mysql.new_cursor(dictionary = True)
     cur.execute("SELECT * FROM appexpress.service WHERE id = '"+ id_+"'")
@@ -1118,20 +913,8 @@ def GetSewingByID():
     c = json.dumps(a,indent=4, default=defaultconverter)
     return (c)
 
-#Get all commands from a user
-@app.route('/getusercommands', methods=['POST'])
-def GetUserCommands():
-    if request.method == 'POST':
-        id = request.json["id"]
-        cur = mysql.new_cursor(dictionary = True)
-        cur.execute(f"SELECT * FROM appexpress.command WHERE user = '{id}'")
-        a = cur.fetchall()
-        c = json.dumps(a, default=defaultconverter)
-        mysql.connection.commit()
-        return (c)
-
 @app.route('/addservice', methods=['POST', 'GET'])
-def AddService():
+def post_service():
     if request.method == 'POST':
         id = request.json['id']
         name = request.json['name']
@@ -1147,7 +930,7 @@ def AddService():
 
 #update service
 @app.route('/updateservice', methods=['POST', 'GET'])
-def Update_Service():
+def put_service():
     if request.method == 'POST':
         id = request.json['id']
         name = request.json['name']
@@ -1162,328 +945,6 @@ def Update_Service():
         return "True"
     
 
-#Connection Config
-@app.route('/connect', methods = ['POST', 'GET'])
-def secureConnection():
-    if request.method == 'POST':
-        username = request.json['name']
-        password = request.json['password']
-        email = request.json['mail']
-        cur = mysql.new_cursor(dictionary=True)
-        #Check if mail ou username can match depending on what user entered
-        print(f"Connection for user {username} and password {password}")
-        if username != "":
-            cur.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.user WHERE name = '{username}' and password = '{password}'")
-        elif email != "":
-            cur.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.user WHERE mail = '{email}' and password = '{password}'")
-        a = cur.fetchone()
-        print(a)
-        return json.dumps(a)
-
-#Connection with the server. username exist ? return the password otherwise return nil      
-@app.route('/checkuser', methods = ['POST', 'GET'])
-def check_user():
-    if request.method == 'POST':
-        username = request.json['name']
-        email = request.json['mail']
-        cur =  mysql.new_cursor(dictionary=True)
-        result = ""
-        if username != "":
-            #Get the password associate 
-            cur.execute(f"SELECT password FROM appexpress.user WHERE name = '{username}'")
-        elif email != "":
-            cur.execute(f"SELECT password FROM appexpress.user WHERE mail = '{email}'")
-        
-        result = cur.fetchone()
-        return result
-
-#Get all users
-@app.route('/getusers')
-def GetUsers():
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute('SELECT * FROM appexpress.user')
-    a = cur.fetchall()
-    return json.dumps(a)
-
-#Obtenir des informations sur un utilisateur à partir de son ID
-@app.route('/getuserinfo')
-def GetUserInfo():
-    userID = request.args.get('id')
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute("SELECT * FROM appexpress.user WHERE id = '"+userID+"'")
-    a = cur.fetchall()
-    return json.dumps(a)
-
-#Mettre à jour un utilisateur à partir de son ID
-@app.route('/updateuser', methods = ['POST'])
-def UpdateUser():
-    id_ = request.json['id']
-    username = request.json['name']
-    mail = request.json['mail']
-    adress = request.json['adress']
-    phone = request.json['phone']
-    password = request.json['password']
-    account = request.json['type']
-    loc_lat = request.json['loc_lat']
-    loc_lon = request.json['loc_lon']
-    province = request.json['province']
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute(f"UPDATE `appexpress`.`user` SET `name` = '{username}', `mail` = '{mail}', `adress` = '{adress}', `phone` = '{phone}', `password` = '{password}', `type` = '{account}', `loc_lat` = '{loc_lat}', `loc_lon` = '{loc_lon}', `province` = '{province}'  WHERE (`id` = '{id_}');")
-    mysql.connection.commit()
-    #Get user and send it back
-    cursor.execute(f'SELECT * FROM appexpress.user WHERE id = {id_};')
-    a = cursor.fetchone()
-    print(a)
-    return json.dumps(a)
-
-#Register User
-@app.route('/register', methods = ['POST', 'GET'])
-def AddUser():
-    if request.method == 'POST':
-        cur = mysql.new_cursor()
-        nameUser = request.json['name']
-        email = request.json['mail']
-        addressUser = request.json['adress']
-        phoneUser = request.json['phone']
-        passwordUser = request.json['password']
-        typeUser = request.json['type']
-        loc_lat = request.json['loc_lat']
-        loc_lon = request.json['loc_lon']
-        province = request.json['province']
-        cur.execute(f"INSERT INTO `appexpress`.`user` (`name`, `mail`, `adress`, `phone`, `password`, `type`, `loc_lat`, `loc_lon`, `province`) VALUES ('{nameUser}', '{email}', '{addressUser}', '{phoneUser}', '{passwordUser}', '{typeUser}', '{loc_lat}', '{loc_lon}', '{province}')")
-        mysql.connection.commit()
-        id = cur.lastrowid
-        #Create user recap in html array
-        user_recap = f"<table><tr><td>Nom</td><td>{nameUser}</td></tr><tr><td>Adresse</td><td>{addressUser}</td></tr><tr><td>Mail</td><td>{email}</td></tr><tr><td>GSM</td><td>{phoneUser}</td></tr><tr><td>Mot de passe</td><td>{passwordUser}</td></tr></table> <i>Ceci est un mail factice pour tests alpha</i>"
-        #Send mail to user
-        #send_email(to_addr=email, subject="Inscription Ex-press Dry Clean", user_name=(nameUser), email_type="inscription", user_recap=user_recap)
-        return json.dumps(id)
-    
-#Get all commands
-@app.route('/getcommands')
-def GetCommands():
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute('SELECT * FROM appexpress.command')
-    a = cur.fetchall()
-    return json.dumps(a, default=defaultconverter)
-
-#Add command
-@app.route('/addcommand', methods = ['POST', 'GET'])
-def AddCommand():
-    if request.method == 'POST':
-        file = request.json
-        id = request.json['id']
-        user = request.json['user']
-        status= request.json['infos']
-        cost=  request.json['cost']
-        enter_date =  request.json['enter_date']
-        return_date =  request.json['return_date']
-        discount =  request.json['discount']
-        date = request.json['date_']
-        #date =  request.json['enter_date']
-        services_quantity =  request.json['services_quantity']
-        #agent = request.json['agent']
-        enter_time = request.json['enter_time']
-        return_time = request.json['return_time']
-        sub_total = request.json['sub_total']
-        delivery = request.json['delivery']
-        cur = mysql.new_cursor(dictionary = True)
-        cur.execute(f"INSERT INTO `appexpress`.`command` (`id`, `infos`, `cost`, `enter_date`, `return_date`,`discount`, `services_quantity`, `user`, `enter_time`, `return_time`, `sub_total`, `delivery`) VALUES ('{id}', '{status}', '{cost}', '{enter_date}', '{return_date}', '{discount}', '{services_quantity}', '{user}', '{enter_time}', '{return_time}','{sub_total}','{delivery}')")
-        #cur.execute("INSERT INTO `appexpress`.`command_has_user` (`command_id`, `user`) VALUES ('"+str(id)+"', '"+str(user)+"')")
-        mysql.connection.commit()
-        id = cur.lastrowid
-        #Add services_quatity elements to command_service table
-        for i in range(len(services_quantity.split(','))):
-            cur.execute(f"INSERT INTO `appexpress`.`command_service` (`command_id`, `service_id`, `quantity`) VALUES ('{id}', '{services_quantity.split(',')[i].split(':')[0]}', '{services_quantity.split(',')[i].split(':')[1]}')")
-            mysql.connection.commit()
-        #Create command recap in html array
-        command_recap = f"<table><tr><td>Numéro de commande</td><td>{id}</td></tr><tr><td>Prix</td><td>{cost}</td></tr><tr><td>Date de prise en charge</td><td>{enter_date}</td></tr><tr><td>Date de retour</td><td>{return_date}</td></tr><tr><td>Quantite de services</td><td>{services_quantity}</td></tr><tr><td>Heure de prise en charge</td><td>{enter_time}h-{int(enter_time) +1 }h</td></tr><tr><td>Heure de retour</td><td>{return_time}h-{int(return_time) +1 }h</td></tr><tr><td>Sous-total</td><td>{sub_total}</td></tr><tr><td>Livraison</td><td>{delivery}</td></tr></table> <i>Ceci est un mail factice pour tests de version alpha</i>"
-        #Get user infos
-        cur.execute(f"SELECT * FROM appexpress.user WHERE id = '{user}'")
-        a = cur.fetchall()
-        #Get services info
-        #Write mail
-        command_recap = f"<table><tr><td>Numéro de commande</td><td>{id}</td></tr><tr><td>Prix</td><td>{cost}€</td></tr><tr><td>Date de prise en charge</td><td>{enter_date}</td></tr><tr><td>Date de retour</td><td>{return_date}</td></tr><tr><td>Heure de prise en charge</td><td>{enter_time}h-{int(enter_time) +1 }h</td></tr><tr><td>Heure de retour</td><td>{return_time}h-{int(return_time) +1 }h</td></tr><tr><td>Sous-total</td><td>{sub_total}€</td></tr><tr><td>Livraison</td><td>{delivery}€</td></tr></table>"
-        #Send mail to user
-        #send_email(to_addr=a[0]["mail"], subject="Commande Ex-press Dry Clean", user_name=(a[0]["name"] +" "+ a[0]["surname"]), email_type="command_validation", command_recap=command_recap)
-
-
-    return json.dumps(id)
-
-@app.route('/getserviceandcommand')
-def GetServiceAndCommand():
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute("SELECT * FROM appexpress.service_has_command")
-    a = cur.fetchall()
-    return json.dumps(a)
-
-@app.route('/addservicehascommand', methods = ['POST', 'GET'])
-def AddServiceHasCommand():
-    if request.method =='GET':
-        service = request.args.get('service')
-        commandid = request.args.get('command')
-        quantity = request.args.get('quantity')
-        cur = mysql.new_cursor()
-        cur.execute("INSERT INTO `appexpress`.`service_has_command` (`service_id`, `command_id`, `quantity`) VALUES ('"+str(service)+"', '"+str(commandid)+"', '"+str(quantity)+"');")
-        mysql.connection.commit()
-        return "True"
-
-@app.route('/getuserandcommand')
-def GetUserAndCommand():
-    cur = mysql.new_cursor(dictionary = True)
-    cur.execute("SELECT * FROM appexpress.command_has_user")
-    a = cur.fetchall()
-    return json.dumps(a)
-
-#Fonction qu ajoute une commande à un utilisateur 
-@app.route('/addcommandtouser', methods = ['POST','GET'])
-def AddCommandToUser():
-    user = request.json['user']
-    command = request.json['command_id']
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute("INSERT INTO `appexpress`.`command_has_user` (`command_id`, `user`) VALUES ('"+str(command)+"', '"+str(user)+"')")
-    mysql.connection.commit()
-    return "True"
-
-#Fonction qui recupère les horaires
-@app.route('/gettimes')
-def GetTimes():
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute("SELECT * FROM appexpress.times")
-    a = cursor.fetchall()
-    return json.dumps(a)
-
-
-
-#Fonction qui met à jour un horaire
-@app.route('/updatetime')
-def UpdateTimes():
-    id = request.json['id']
-    state = request.json['state']
-    day = request.json['day']
-    cursor = mysql.new_cursor()
-    cursor.execute("UPDATE `appexpress`.`times` SET `state` = '"+state+"' WHERE (`id` = '"+id+"');")
-    mysql.connection.commit()
-    return "True"
-
-#Fonction qui ajoute un horaire
-@app.route('/addtime', methods =['POST'])
-def AddTime():
-    if request.method == 'POST':
-        creneau = request.json['creneau']
-        state = request.json['state']
-        day = request.json['day']
-        program = request.json['program']
-        cursor = mysql.new_cursor()
-        cursor.execute("INSERT INTO `appexpress`.`times` (`creneau`, `state`,`day`) VALUES ('"+str(creneau)+"', '"+str(state)+"','"+str(day)+"')")
-        mysql.connection.commit()
-        return "True" 
-
- 
-#Fonction qui ajoute un Coupon
-@app.route('/addcoupon', methods =['POST'])
-def AddCoupon():
-    if request.method == 'POST':
-        codeCoupon = request.json['code']
-        cost = request.json['discount']
-        cursor = mysql.new_cursor()
-        cursor.execute(f"INSERT INTO `appexpress`.`coupon` (`code`, `discount`) VALUES ('{codeCoupon}', '{cost}')")
-        mysql.connection.commit()
-        return "True"
-
-#Fonction qui supprime un coupon
-@app.route('/deletecoupon', methods =['POST'])
-def DeleteCoupon():
-    if request.method == 'POST':
-        id = request.json['id']
-        cursor = mysql.new_cursor()
-        cursor.execute(f"DELETE FROM `appexpress`.`coupon` WHERE (`id` = '{id}')")
-        mysql.connection.commit()
-        return "True"
-    
-
-#Fonction qui recupère les coupons
-@app.route('/getcoupons')
-def GetCoupons():
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute("SELECT * FROM appexpress.coupon")
-    a = cursor.fetchall()
-    return json.dumps(a, default=defaultconverter)
-
-
-#Fonction qui supprime un utilisateur 
-@app.route('/deleteuser', methods = ['POST','GET'])
-def DeleteUser():
-    if request.method == 'POST':
-        user = request.json['id']
-        #Get user datas
-        mail = request.json['mail']
-        
-        cursor = mysql.new_cursor(dictionary = True)
-        cursor.execute("DELETE FROM `appexpress`.`user` WHERE (`id` = '"+str(user)+"')")
-        mysql.connection.commit()
-        #send mail that we are sorry
-        #send_email(to_addr=mail, subject="Au revoir", user_name=(a[0]["name"]), email_type="command_validation", command_recap=command_recap)
-
-    return "True"
-
-#Fonction qui supprime un service 
-@app.route('/deleteservice', methods = ['POST','GET'])
-def DeleteService():
-    if request.method == 'POST':
-        service = request.json['id']
-        cursor = mysql.new_cursor(dictionary = True)
-        cursor.execute("DELETE FROM `appexpress`.`service` WHERE (`id` = '"+str(service)+"')")
-        mysql.connection.commit()
-    return "True"
-
-
-
-#Fonction qui permet une connexion securisée 
-@app.route('/secureconnection', methods = ['POST','GET'])
-def SecureConnection():
-    if request.method == 'POST':
-        username = request.form['name']
-        password = request.form['password']
-        cursor = mysql.new_cursor(dictionary = True)
-        cursor.execute("SELECT password FROM appexpress.user WHERE name = '"+username+"'")
-        result = cursor.fetchall()
-        if password == result[0]["password"]:     
-            return "True"
-        else: return "False"
-
-#Fonction qui modifie une commande 
-@app.route('/updatecommand', methods = ['POST'])
-def UpdateCommand():
-    Id = request.json['id']
-    infos = request.json['infos']
-    dateIn = request.json['enter_date']
-    dateOut = request.json['return_date']
-    cost = request.json['cost']
-    discount = request.json['discount']
-    services_quantity = request.json['services_quantity']
-    date = request.json['date_']
-    agent = request.json['agent']
-    user = request.json['user']
-    enter_time = request.json['enter_time']
-    return_time = request.json['return_time']
-    sub_total = request.json['sub_total']
-    delivery = request.json['delivery']
-    cursor = mysql.new_cursor()
-    cursor.execute(f"UPDATE `appexpress`.`command` SET `cost` = '{cost}', `enter_date` = '{dateIn}', `return_date` = '{dateOut}', `services_quantity` = '{services_quantity}', `agent` = '{agent}', `enter_time` = '{enter_time}', `return_time` = '{return_time}', `sub_total` = '{sub_total}', `delivery` = '{delivery}' WHERE (`id` = '{Id}');")
-    mysql.connection.commit()
-    return "True"
-
-#Fonction qui supprime une commande
-@app.route('/deletecommand', methods = ['POST','GET'])
-def DeleteCommand():
-    if request.method == 'POST':
-        command = request.json['id']
-        cursor = mysql.new_cursor(dictionary = True)
-        cursor.execute("DELETE FROM `appexpress`.`command` WHERE (`id` = '"+str(command)+"')")
-        mysql.connection.commit()
-    return "True"
-
 #Return server time
 @app.route('/time')
 def get_current_time():
@@ -1495,13 +956,6 @@ def get_current_time():
 def unidecode(text):
     return unidecode.unidecode(text)
 
-"DELETE FROM `appexpress`.`service` WHERE (`id` = '5');"
-
-""" Client ADD 
-INSERT INTO `appexpress`.`client` (`ID_CLIENT`, `NAME_CLIENT`, `surname_CLIENT`, `EMAIL_CLIENT`, `ADDRESS_CLIENT`, `PHONE_CLIENT`, `PASSWORD_CLIENT`) VALUES ('hean_client20', 'Hean', 'client', 'jhubertmillenium@gmail.com', 'Rue des Allies 93', '486650303', 'hean2000');
-"""
-path = os.path.abspath('/var/www/express/static/images')
-#path = os.path.abspath('static/images/')
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif','pdf','doc','docx'}
 
 
@@ -1517,11 +971,7 @@ def upload_image():
     file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
     return 'File uploaded successfully'
 
-
-
 # Servir une Image  =======================================================================
-
-
 
 @app.route('/getimage')
 def get_image(name:str = ""):
@@ -1556,25 +1006,6 @@ def get_all_images():
             result = fullname
             send_file(result, mimetype=magic.from_file(result, mime=True))
 
-
-# ------ database management ------
-#fill the database
-@app.route('/filldatabase')
-def fill_database():
-    cursor = mysql.new_cursor( dictionary = True)
-    # get stores
-    cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.store")
-    stores = cursor.fetchall()
-    cursor.reset()
-    # get services
-    cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.service")
-    services = cursor.fetchall()
-    #fill the store_has_service table
-    for service in services:
-        for store in stores:
-            cursor.reset()
-            cursor.execute(f"INSERT INTO `{app.config['MYSQL_DB']}`.`store_has_service` (`store_name`, `service_name`,`cost`) VALUES ('{store['name']}', '{service['name']}', '5.00');")
-            mysql.connection.commit()
 
 # ------ Dictionaries ------
 # Have to use Fr, En, Nl & It
@@ -1812,13 +1243,6 @@ dictionary = {'fr':{
     ]
 }}
 
-""" @app.after_request
-def add_header(response):
-    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-    response.headers['Pragma'] = 'no-cache'
-    response.headers['Expires'] = '-1'
-    return response
- """
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=7001)
     refresh()

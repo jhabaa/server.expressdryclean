@@ -539,7 +539,7 @@ def submit_collaboration():
         return redirect(url_for('collaborations', lang = session['lang']))
     try:
         all_services_check = data['all_services']
-    except:
+    except KeyError:
         all_services_check = False
 
     #Set a cool message cause form is okay

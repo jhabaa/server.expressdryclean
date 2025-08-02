@@ -243,9 +243,6 @@ class Address:
         self.longitude = longitude
         self.latitude = latitude
 
-settingPath = os.path.abspath('/var/www/express/static')
-settingPath = os.path.abspath('./static')
-
 #To Convert DateTime
 def defaultconverter(o):
     if isinstance(o, datetime.datetime):
@@ -286,7 +283,7 @@ def send_email(to_addr, subject, content:str, attachment_path : str = None, name
     server.sendmail(app.config["NOREPLY_EMAIL"], to_addr, msg.as_string())
     server.quit()
     #Add mail to CSV file
-    with open(f'{settingPath}/mails.csv', 'a') as f:
+    with open(f'{app.config['ROOT_FOLDER']}/mails.csv', 'a') as f:
         writer = csv.writer(f)
         writer.writerow([datetime.datetime.now().strftime("%d/%m/%Y - %H:%M:%S"), to_addr, subject, name, content])
         f.close()

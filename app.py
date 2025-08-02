@@ -434,16 +434,6 @@ def Operate(model:str):
 
     return "True"
 
-# Function to test the connection
-@app.route('/test')
-def test():
-    cursor = mysql.new_cursor(dictionary = True)
-    cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.user")
-    attributes = list(cursor.column_names)
-
-    print (attributes)
-    return json.dumps(cursor.fetchall(), indent=4, default=defaultconverter)
-
 #Function to add a day off
 @app.route('/adddayoff', methods=['POST'])
 def AddDayOff():
@@ -544,21 +534,6 @@ def GetDistanceToGo(adress):
     return round(distance.distance(start_point, end_point).km, 2)
 """
 
-#Function to calculate cost delevery according the ZIP CODE
-def GetCostDelevery(code):
-    
-    # Look for code in deliveryPrices
-    with open(f'{settingPath}/deliveryPrices.csv', 'r') as f:
-        reader = csv.reader(f)
-        deliveryPrices = list(reader)
-        f.close()
-    for i in deliveryPrices:
-        if i[0] == code:
-            return i[1]
-        
-    # If code not found, return default price
-    return 0.00
-    #return decimal.Decimal(GetDistanceToGo(adress)*price_by_km).quantize(decimal.Decimal('.01'))
 
 #function to check a coupon and return the value
 @app.route('/checkcoupon', methods=['POST'])

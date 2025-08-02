@@ -312,7 +312,7 @@ command_service = Enum('command_service',[
 
 #==================================
 
-def FormatTextToMysql(a,sep):
+def format_to_mysql(a,sep):
     # if a is a number value, return it as it is
     if type(a) == int or type(a) == float:
         return a
@@ -325,7 +325,7 @@ def FormatTextToMysql(a,sep):
 @app.route('/getalldatas/<filetype>/<name>/')
 @app.route('/getalldatas/<filetype>/<name>/<where>/')
 @app.route('/getalldatas/<filetype>/<name>/<where>/<lang>/')
-def GetData(filetype:str  ,name: str, where = None, lang = None):
+def get_data(filetype:str  ,name: str, where = None, lang = None):
     cur = mysql.new_cursor(dictionary = True)
     # My plan here is to use RegEx with the where here to easily fetch commands for a specific month for example
     if where:
@@ -352,7 +352,7 @@ def escape (value : str):
 
 # Function to aperate - Create:Done
 @app.route('/api/<model>', methods=['POST','DELETE','PUT'])
-def Operate(model:str):
+def operate(model:str):
     cursor = mysql.new_cursor(dictionary = True, buffered = True)
     # Get primary Key
     cursor.execute(f"SHOW KEYS FROM {app.config['MYSQL_DB']}.{model} WHERE Key_name = 'PRIMARY'")
@@ -371,7 +371,7 @@ def Operate(model:str):
         cursor.close()
         cursor = mysql.new_cursor(dictionary = True, buffered = True)
         create = ", ".join([f"`{att}`" for att in request.json.keys()]) # Attributes here needs to be embeded in `` because they are reserved words in SQL
-        query = f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({create}) VALUES ({', '.join([f'{FormatTextToMysql(request.json[att],1)}' for att in request.json.keys()])})"
+        query = f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({create}) VALUES ({', '.join([f'{format_to_mysql(request.json[att],1)}' for att in request.json.keys()])})"
         #cursor.execute(f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({','.join(list(FormatTextToMysql(att,1) for att in attributes))}) VALUES ({','.join(list(FormatTextToMysql(val,2) for val in values))})")
         
         print(query)
@@ -384,7 +384,7 @@ def Operate(model:str):
         model_ID = list(cursor.column_names)[-1]
         cursor.close()
         cursor = mysql.new_cursor(dictionary = True, buffered = True)
-        cursor.execute(f"DELETE FROM {app.config['MYSQL_DB']}.{model} WHERE {primary_key} = {FormatTextToMysql(request.json[primary_key], 1)}")
+        cursor.execute(f"DELETE FROM {app.config['MYSQL_DB']}.{model} WHERE {primary_key} = {format_to_mysql(request.json[primary_key], 1)}")
         mysql.connection.commit()
         return "True"
     if request.method == "PUT":
@@ -394,8 +394,8 @@ def Operate(model:str):
             updates = ", ".join([f"{att} = {request.json[att]}" for att in request.json.keys() if att != primary_key])
             query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {request.json[primary_key]}"
         else:
-            updates = ", ".join([f"{att} = {FormatTextToMysql(request.json[att],1)}" for att in request.json.keys() if att != primary_key])
-            query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {FormatTextToMysql(request.json[primary_key],2)}"
+            updates = ", ".join([f"{att} = {format_to_mysql(request.json[att],1)}" for att in request.json.keys() if att != primary_key])
+            query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {format_to_mysql(request.json[primary_key],2)}"
         print(updates)
         print(query)
         
@@ -436,9 +436,9 @@ def home(lang = 'fr', subpage = None, store = None):
     
     print(getattr(g, 'user', None))
     #return str((GetCostDelevery("Rue Saint-germain 92 1410 Waterloo")*price_by_km).quantize(decimal.Decimal('.01')))
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
-    stores = GetData('full','store')
-    services = GetData('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
     return render_template('index.html', dictionary = dictionary[lang] , services = services, categories=categories, stores=stores, lang = session['lang'], current_page = 'home')
 
 @app.route('/<lang>/policy/')
@@ -446,9 +446,9 @@ def policy(lang = 'fr'):
     #set language
     session['lang'] = lang
     #Usefull for the header, since Flask ask fot it
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
-    stores = GetData('full','store')
-    services = GetData('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
     return render_template('policy.html', lang = session['lang'], categories = categories, stores = stores, services = services, current_page = 'policy')
 
 @app.route('/<lang>/terms/')
@@ -456,9 +456,9 @@ def terms(lang = 'fr'):
     #set language
     session['lang'] = lang
     #Usefull for the header, since Flask ask fot it
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
-    stores = GetData('full','store')
-    services = GetData('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
     return render_template('terms.html', lang = session['lang'], categories = categories, stores = stores, services = services, current_page = 'terms')
 
 @app.route('/<lang>/pricing/')
@@ -467,9 +467,9 @@ def terms(lang = 'fr'):
 def pricing(lang = 'fr', subpage = None, store = None):
     #set language
     session['lang'] = lang
-    services = GetData('full','service') # Get all services
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
-    services_in_store = GetData('full','store_has_service') # Get all services associates to all stores
+    services = get_data('full','service') # Get all services
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
+    services_in_store = get_data('full','store_has_service') # Get all services associates to all stores
 
     others_categories = [ x for x in categories if x['name'] != subpage]
     available_services = [ x for x in services if x['category_name'] == subpage]
@@ -479,7 +479,7 @@ def pricing(lang = 'fr', subpage = None, store = None):
     #   selected_category = { k.encode('utf-8'): v.encode('utf-8') for k, v in selected_category.items()}
     # Convert all informations in selectedCategory to utf-8
 
-    stores = GetData('full','store')
+    stores = get_data('full','store')
     selected_store = [ x for x in stores if x['name'] == store][-1] if store else None
     return render_template('pricing.html', lang = session['lang'], categories = categories, services_in_store = services_in_store, dictionary = dictionary[lang], category = subpage, other_categories = others_categories, services = None if len(available_services) <= 0 else available_services, selected_category = selected_category, stores = stores, selected_store = selected_store, current_page = 'pricing')
     
@@ -488,9 +488,9 @@ def pricing(lang = 'fr', subpage = None, store = None):
 def about(lang = 'fr', subpage = None):
     #set language
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
     return render_template('about.html', lang = session['lang'], dictionary = dictionary[lang], current_page = 'about', stores = stores, services = services, categories = categories)
 
 @app.route('/<lang>/collaborations/')
@@ -498,15 +498,15 @@ def about(lang = 'fr', subpage = None):
 def collaborations(lang = 'fr', subpage = None):
     #set language
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
     return render_template('collaborations.html', lang = session['lang'], dictionary = dictionary[lang], current_page = 'collaborations', stores = stores, services = services, categories = categories)
 
 @app.route('/submit_collaboration', methods=['POST'])
 def submit_collaboration():
     data = request.form
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
     availablesCategoriesNames = [ x['name'] for x in categories]
     #send mail to admin to inform him about the message
     company = data['company_name']
@@ -517,7 +517,7 @@ def submit_collaboration():
     message = data['message']
     recaptcha = data['g-recaptcha-response']
 
-    recaptchaResponse = checkReCaptcha(token = recaptcha)
+    recaptchaResponse = check_recaptcha(token = recaptcha)
 
     if (recaptchaResponse == False):
         flash(flash_dict[2], 'error')
@@ -589,9 +589,9 @@ def submit_collaboration():
 def career(lang = 'fr', subpage = None):
     #set language
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])
     return render_template('career.html', lang = session['lang'], dictionary = dictionary[lang], current_page = 'career', stores = stores, services = services, categories = categories)
 
 @app.route('/submit_career', methods=['POST'])
@@ -605,7 +605,7 @@ def submit_career():
 
     recaptcha = data['g-recaptcha-response']
     print(data, flush = True)
-    recaptchaResponse = checkReCaptcha(token = recaptcha)
+    recaptchaResponse = check_recaptcha(token = recaptcha)
     is_invalid = email == None or name == None # Check if some datas are present 
     if (recaptchaResponse == False or is_invalid):
         flash(flash_dict[2], 'error')
@@ -672,9 +672,9 @@ def contact(lang = 'fr', subpage = None):
     greatings = _("Bonjour")
     #set language
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
     return render_template('contact.html', lang = session['lang'], dictionary = dictionary[lang], current_page = 'contact', stores = stores, services = services, categories = categories)
 
 
@@ -682,26 +682,26 @@ def contact(lang = 'fr', subpage = None):
 @app.route('/<lang>/delivery/<subpage>')
 def delivery(lang = 'fr', subpage = None ):
     session['lang'] = lang
-    params = GetData('full','params')[-1]
+    params = get_data('full','params')[-1]
     print(params)
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
     return render_template('delivery.html', params = params, lang = session['lang'], dictionary = dictionary[lang], current_page = 'delivery', stores = stores, services = services, categories = categories)   
 
 @app.route('/<lang>/localization/')
 @app.route('/<lang>/localization/<subpage>')
 def localization(lang = 'fr', subpage = None ):
     session['lang'] = lang
-    stores = GetData('full','store')
-    services = GetData('full','service')
-    categories = sorted(GetData('full','category'), key=lambda x: x['index'])# Get just the categories 
+    stores = get_data('full','store')
+    services = get_data('full','service')
+    categories = sorted(get_data('full','category'), key=lambda x: x['index'])# Get just the categories 
     available_store = [ x for x in stores if x['name'] == subpage][-1] if subpage else None
     return render_template('localization.html', lang = session['lang'], dictionary = dictionary[lang], stores = stores, selected_store = available_store, current_page = 'localization', services = services, categories = categories)
 
 
 #Funtion to make a post to googleReCaptcha and return the response
-def checkReCaptcha(token:str , remoteip:str = None):
+def check_recaptcha(token:str , remoteip:str = None):
     key = app.config["RECAPTCHA_SERVER_KEY"]
     url = "https://www.google.com/recaptcha/api/siteverify"
     obj = {"secret":key, "response":token}
@@ -719,7 +719,7 @@ def chatwithus():
     message = data['subject']
     recaptcha = data['g-recaptcha-response']
     print(data, flush = True)
-    recaptchaResponse = checkReCaptcha(token = recaptcha)
+    recaptchaResponse = check_recaptcha(token = recaptcha)
 
     if (recaptchaResponse == False):
         flash(flash_dict[12], 'error')
@@ -760,7 +760,7 @@ def chatwithus():
 
 # Function to get the dictionary of a language
 @app.route('/api/getdictionary', methods=['GET'])
-def GetDictionary():
+def get_dictionary():
     lang = request.args.get('lang')
     #Get the babel .po
     po = polib.pofile(f"{app.config['BABEL_PO_FILES_PATH']}/{lang}/LC_MESSAGES/messages.po")
@@ -769,7 +769,7 @@ def GetDictionary():
 
 #Function to update a po file
 @app.route('/api/updatebabelpo', methods=['POST'])
-def updateBabelPo():
+def update_babel_po():
     print("Updating po file")
     lang = request.json['lang']
     translations = request.json['translations']
@@ -785,7 +785,7 @@ def updateBabelPo():
 
 # Function to get server state (online or offline)
 @app.route('/getserverstate')
-def GetServerState():
+def get_server_state():
     return "Connected"
 
 import threading
@@ -794,7 +794,7 @@ import threading
 @app.route('/hotrestartserver', methods=['GET'])
 @cross_origin(headers=['Content-Type', 'Authorization'])
 @requires_auth
-def RestartServer():
+def restart_server():
     def restart():
         result = subprocess.run(["sudo","systemctl", "restart", f"{app.config['SERVICE_NAME']}"], check=True, capture_output=True, text=True)
     
@@ -815,7 +815,7 @@ def updatewebsitedictionnary():
 
 # function to update the flask babel dictionnary from the app
 @app.route('/api/updatebabelpot', methods=['POST'])
-def updateBabel():
+def update_babel():
     new_translations = request.json["translations"] # get new translations
 
     if not new_translations:
@@ -838,7 +838,7 @@ def updateBabel():
 
 #Function to get all dictionnary words... the pot file
 @app.route('/api/getpot')
-def getPot():
+def get_pot():
     pot = polib.pofile(f"{app.config['ROOT_FOLDER']}/messages.pot")
     t = {entry.msgid: entry.msgstr for entry in pot}
     return jsonify(t)
@@ -859,7 +859,7 @@ def show_sewing():
 
 #Get settings
 @app.route('/getsettings')
-def GetSettings():
+def get_settings():
     cur = mysql.new_cursor(dictionary = True)
     cur.execute("SELECT * FROM appexpress.settings")
     a = cur.fetchone()
@@ -868,7 +868,7 @@ def GetSettings():
 
 #Get params {id, tarif_bruxelles, tarif_brabant, tarif_km}
 @app.route('/getparams')
-def GetParams():
+def get_params():
     cur = mysql.new_cursor(dictionary = True)
     cur.execute("SELECT * FROM appexpress.params")
     a = cur.fetchone()
@@ -877,7 +877,7 @@ def GetParams():
 
 #Update Params
 @app.route('/updateparams', methods=['POST'])
-def UpdateParams():
+def put_params():
     if request.method == 'POST':
         tarif_bruxelles = request.json['tarif_bruxelles']
         tarif_brabant = request.json['tarif_brabant']
@@ -890,7 +890,7 @@ def UpdateParams():
 
 #Get service by ID
 @app.route('/getservicebyid')
-def GetSewingByID():
+def get_service_by_id():
     id_ = request.args.get("id")
     cur = mysql.new_cursor(dictionary = True)
     cur.execute("SELECT * FROM appexpress.service WHERE id = '"+ id_+"'")
@@ -899,7 +899,7 @@ def GetSewingByID():
     return (c)
 
 @app.route('/addservice', methods=['POST', 'GET'])
-def AddService():
+def post_service():
     if request.method == 'POST':
         id = request.json['id']
         name = request.json['name']
@@ -915,7 +915,7 @@ def AddService():
 
 #update service
 @app.route('/updateservice', methods=['POST', 'GET'])
-def Update_Service():
+def put_service():
     if request.method == 'POST':
         id = request.json['id']
         name = request.json['name']

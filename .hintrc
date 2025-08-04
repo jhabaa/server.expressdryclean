@@ -1,0 +1,24 @@
+{
+  "extends": [
+    "development"
+  ],
+  "hints": {
+    "compat-api/css": [
+      "default",
+      {
+        "ignore": [
+          "text-wrap",
+          "text-wrap: wrap",
+          "text-wrap: balance",
+          "text-wrap: nowrap",
+          "float: inline-end",
+          "text-justify",
+          "backdrop-filter",
+          "text-wrap-style",
+          "text-wrap-style: stable",
+          "text-wrap: pre wrap"
+        ]
+      }
+    ]
+  }
+}

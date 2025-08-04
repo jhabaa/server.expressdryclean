@@ -913,10 +913,9 @@ def get_service_by_id():
     c = json.dumps(a,indent=4, default=defaultconverter)
     return (c)
 
-@app.route('/addservice', methods=['POST', 'GET'])
+@app.route('/addservice', methods=['POST'])
 def post_service():
     if request.method == 'POST':
-        id = request.json['id']
         name = request.json['name']
         cost = decimal.Decimal(str(request.json['cost'])).quantize(decimal.Decimal('.01'))
         category = request.json['categories']
@@ -929,10 +928,10 @@ def post_service():
         return "True"
 
 #update service
-@app.route('/updateservice', methods=['POST', 'GET'])
+@app.route('/updateservice', methods=['POST'])
 def put_service():
     if request.method == 'POST':
-        id = request.json['id']
+        id_ = request.json['id']
         name = request.json['name']
         cost = decimal.Decimal(str(request.json['cost'])).quantize(decimal.Decimal('.01'))
         category = request.json['categories']
@@ -940,7 +939,7 @@ def put_service():
         description = request.json['description']
         illustration = request.json['illustration']
         cursor = mysql.new_cursor()
-        cursor.execute(f"UPDATE `appexpress`.`service` SET `name` = '{name}', `cost` = '{cost}', `categories` = '{category}', `time` = '{size}', `description` = '{description}', `illustration` = '{unidecode(illustration)}' WHERE (`id` = '{id}');")
+        cursor.execute(f"UPDATE `appexpress`.`service` SET `name` = '{name}', `cost` = '{cost}', `categories` = '{category}', `time` = '{size}', `description` = '{description}', `illustration` = '{unidecode(illustration)}' WHERE (`id` = '{id_}');")
         mysql.connection.commit()
         return "True"
     

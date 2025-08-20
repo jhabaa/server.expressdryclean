@@ -34,6 +34,8 @@ from flask import render_template, g, Response, _request_ctx_stack
 from flask import request, url_for,redirect
 from flask_mysql_connector import MySQL
 
+from  flask_wtf.csrf import CSRFProtect
+
 import json as json
 import magic
 import decimal
@@ -54,8 +56,12 @@ We need to add websocket too
 In Normal way, json inital class doesnt parse decimals. Then we used simplejson
 """
 app = Flask(__name__)
+#CSRF protection
+csrf = CSRFProtect(app)
 
 app.config.from_object(Config)
+csrf.init_app(app)
+
 mysql = MySQL(app)
 babel = Babel(app, locale_selector=get_locale)
 

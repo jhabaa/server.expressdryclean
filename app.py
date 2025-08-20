@@ -34,6 +34,8 @@ from flask import render_template, g, Response, _request_ctx_stack
 from flask import request, url_for,redirect
 from flask_mysql_connector import MySQL
 
+from  flask_wtf.csrf import CSRFProtect
+
 import json as json
 import magic
 import decimal
@@ -54,8 +56,12 @@ We need to add websocket too
 In Normal way, json inital class doesnt parse decimals. Then we used simplejson
 """
 app = Flask(__name__)
+#CSRF protection
+csrf = CSRFProtect(app)
 
 app.config.from_object(Config)
+csrf.init_app(app)
+
 mysql = MySQL(app)
 babel = Babel(app, locale_selector=get_locale)
 
@@ -327,9 +333,10 @@ command_service = Enum('command_service',[
 
 #==================================
 
-def format_to_mysql(a,sep):
+def format_to_mysql(a):
     # if a is a number value, return it as it is
-    if type(a) == int or type(a) == float:
+    t = type(a)
+    if  t == int or t == float:
         return a
     else:
         return f"'{a}'"
@@ -352,7 +359,6 @@ def get_data(filetype:str  ,name: str, where = None, lang = None):
         cur.execute(com)
 
     else:
-        translation_table = f"{name}_translation"
         cur.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.{name}")
     a = cur.fetchall()
     if filetype == 'json':
@@ -376,30 +382,23 @@ def operate(model:str):
     if not primary_key:
         return jsonify({"status": "error", "message": "No primary key found"}), 400
     
-
-    result = ""
     if request.method == "POST":
         cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.{model}")
-        attributes = list(cursor.column_names)
-        values = list(request.json[str(att)] for att in attributes)
         ### Execute command
         cursor.close()
         cursor = mysql.new_cursor(dictionary = True, buffered = True)
         create = ", ".join([f"`{att}`" for att in request.json.keys()]) # Attributes here needs to be embeded in `` because they are reserved words in SQL
-        query = f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({create}) VALUES ({', '.join([f'{format_to_mysql(request.json[att],1)}' for att in request.json.keys()])})"
-        #cursor.execute(f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({','.join(list(FormatTextToMysql(att,1) for att in attributes))}) VALUES ({','.join(list(FormatTextToMysql(val,2) for val in values))})")
-        
-        print(query)
+        query = f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({create}) VALUES ({', '.join([f'{format_to_mysql(request.json[att])}' for att in request.json.keys()])})"
+
         cursor.execute(query)
         mysql.connection.commit()
         return str(cursor.lastrowid)
     if request.method == "DELETE":
         # Get the id of the element to delete
         cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.{model}")
-        model_ID = list(cursor.column_names)[-1]
         cursor.close()
         cursor = mysql.new_cursor(dictionary = True, buffered = True)
-        cursor.execute(f"DELETE FROM {app.config['MYSQL_DB']}.{model} WHERE {primary_key} = {format_to_mysql(request.json[primary_key], 1)}")
+        cursor.execute(f"DELETE FROM {app.config['MYSQL_DB']}.{model} WHERE {primary_key} = {format_to_mysql(request.json[primary_key])}")
         mysql.connection.commit()
         return "True"
     if request.method == "PUT":
@@ -409,11 +408,9 @@ def operate(model:str):
             updates = ", ".join([f"{att} = {request.json[att]}" for att in request.json.keys() if att != primary_key])
             query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {request.json[primary_key]}"
         else:
-            updates = ", ".join([f"{att} = {format_to_mysql(request.json[att],1)}" for att in request.json.keys() if att != primary_key])
-            query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {format_to_mysql(request.json[primary_key],2)}"
-        print(updates)
-        print(query)
-        
+            updates = ", ".join([f"{att} = {format_to_mysql(request.json[att])}" for att in request.json.keys() if att != primary_key])
+            query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {format_to_mysql(request.json[primary_key])}"
+
         cursor.execute(query)
         mysql.connection.commit()
         cursor.close()
@@ -444,13 +441,8 @@ def page_not_found(e):
 @app.route('/<lang>/home/<subpage>')
 @app.route('/<lang>/home/<subpage>/<store>')
 def home(lang = 'fr', subpage = None, store = None):
-    #fill_database()
     #set language
     session['lang'] = lang
-    user = getattr(g, 'user', None)
-    
-    print(getattr(g, 'user', None))
-    #return str((GetCostDelevery("Rue Saint-germain 92 1410 Waterloo")*price_by_km).quantize(decimal.Decimal('.01')))
     categories = sorted(get_data('full','category'), key=lambda x: x['index'])
     stores = get_data('full','store')
     services = get_data('full','service')
@@ -490,8 +482,6 @@ def pricing(lang = 'fr', subpage = None, store = None):
     available_services = [ x for x in services if x['category_name'] == subpage]
 
     selected_category = [ x for x in categories if x['name'] == subpage][0] if subpage else None
-    #if selected_category:
-    #   selected_category = { k.encode('utf-8'): v.encode('utf-8') for k, v in selected_category.items()}
     # Convert all informations in selectedCategory to utf-8
 
     stores = get_data('full','store')
@@ -522,7 +512,7 @@ def collaborations(lang = 'fr', subpage = None):
 def submit_collaboration():
     data = request.form
     categories = sorted(get_data('full','category'), key=lambda x: x['index'])
-    availablesCategoriesNames = [ x['name'] for x in categories]
+    availables_categories_names = [ x['name'] for x in categories]
     #send mail to admin to inform him about the message
     company = data['company_name']
     industry = data['industry']
@@ -532,20 +522,20 @@ def submit_collaboration():
     message = data['message']
     recaptcha = data['g-recaptcha-response']
 
-    recaptchaResponse = check_recaptcha(token = recaptcha)
+    recaptcha_response = check_recaptcha(token = recaptcha)
 
-    if (recaptchaResponse == False):
+    if (recaptcha_response == False):
         flash(flash_dict[2], 'error')
         return redirect(url_for('collaborations', lang = session['lang']))
     try:
         all_services_check = data['all_services']
-    except:
+    except KeyError:
         all_services_check = False
 
     #Set a cool message cause form is okay
     flash(flash_dict[7], 'success')
 
-    selected_services = [ x for x in data if x in  availablesCategoriesNames] if all_services_check == False else availablesCategoriesNames
+    selected_services = [ x for x in data if x in  availables_categories_names] if all_services_check == False else availables_categories_names
     #send mail to admin to inform him about the Collaboration
     send_email(
         to_addr=app.config["ADMIN_EMAIL"],
@@ -620,9 +610,9 @@ def submit_career():
 
     recaptcha = data['g-recaptcha-response']
     print(data, flush = True)
-    recaptchaResponse = check_recaptcha(token = recaptcha)
+    recaptcha_response = check_recaptcha(token = recaptcha)
     is_invalid = email == None or name == None # Check if some datas are present 
-    if (recaptchaResponse == False or is_invalid):
+    if (recaptcha_response == False or is_invalid):
         flash(flash_dict[2], 'error')
         return redirect(url_for('career', lang = session['lang']))
 
@@ -684,7 +674,6 @@ def submit_career():
 @app.route('/<lang>/contact/')
 @app.route('/<lang>/contact/<subpage>')
 def contact(lang = 'fr', subpage = None):
-    greatings = _("Bonjour")
     #set language
     session['lang'] = lang
     stores = get_data('full','store')
@@ -716,13 +705,12 @@ def localization(lang = 'fr', subpage = None ):
 
 
 #Funtion to make a post to googleReCaptcha and return the response
-def check_recaptcha(token:str , remoteip:str = None):
+def check_recaptcha(token:str):
     key = app.config["RECAPTCHA_SERVER_KEY"]
     url = "https://www.google.com/recaptcha/api/siteverify"
     obj = {"secret":key, "response":token}
     x = requests.post(url, data = obj)
     data = x.json()
-    print(data, flush = True)
     return data['success']
 
 @app.route('/chatwithus', methods=['POST'])
@@ -733,10 +721,9 @@ def chatwithus():
     phone = data['phone']
     message = data['subject']
     recaptcha = data['g-recaptcha-response']
-    print(data, flush = True)
-    recaptchaResponse = check_recaptcha(token = recaptcha)
+    recaptcha_response = check_recaptcha(token = recaptcha)
 
-    if (recaptchaResponse == False):
+    if (recaptcha_response == False):
         flash(flash_dict[12], 'error')
         return redirect(url_for('contact', lang = session['lang']))
 
@@ -811,7 +798,7 @@ import threading
 @requires_auth
 def restart_server():
     def restart():
-        result = subprocess.run(["sudo","systemctl", "restart", f"{app.config['SERVICE_NAME']}"], check=True, capture_output=True, text=True)
+        _ = subprocess.run(["sudo","systemctl", "restart", f"{app.config['SERVICE_NAME']}"], check=True, capture_output=True, text=True)
     
     thread = threading.Thread(target=restart, daemon=True)
     thread.start()
@@ -846,9 +833,7 @@ def update_babel():
     pot.save(f"{app.config['ROOT_FOLDER']}/messages.pot")
     # Update the translations files
     updating_process = subprocess.Popen(["pybabel", "update", "-i", "messages.pot", "-d", "translations"])
-    print("Updating translations files")
     updating_process.wait()
-    print("Translations updated")
     return jsonify({"status": "success", "message": "Translations updated"})
 
 #Function to get all dictionnary words... the pot file
@@ -860,7 +845,7 @@ def get_pot():
 
 @app.route('/babel_test')
 def babel_test():
-    pot = polib.pofile(f'./messages.pot')
+    pot = polib.pofile('./messages.pot')
     t = {entry.msgid: entry.msgstr for entry in pot}
     return t
 
@@ -913,10 +898,9 @@ def get_service_by_id():
     c = json.dumps(a,indent=4, default=defaultconverter)
     return (c)
 
-@app.route('/addservice', methods=['POST', 'GET'])
+@app.route('/addservice', methods=['POST'])
 def post_service():
     if request.method == 'POST':
-        id = request.json['id']
         name = request.json['name']
         cost = decimal.Decimal(str(request.json['cost'])).quantize(decimal.Decimal('.01'))
         category = request.json['categories']
@@ -929,10 +913,10 @@ def post_service():
         return "True"
 
 #update service
-@app.route('/updateservice', methods=['POST', 'GET'])
+@app.route('/updateservice', methods=['POST'])
 def put_service():
     if request.method == 'POST':
-        id = request.json['id']
+        id_ = request.json['id']
         name = request.json['name']
         cost = decimal.Decimal(str(request.json['cost'])).quantize(decimal.Decimal('.01'))
         category = request.json['categories']
@@ -940,7 +924,7 @@ def put_service():
         description = request.json['description']
         illustration = request.json['illustration']
         cursor = mysql.new_cursor()
-        cursor.execute(f"UPDATE `appexpress`.`service` SET `name` = '{name}', `cost` = '{cost}', `categories` = '{category}', `time` = '{size}', `description` = '{description}', `illustration` = '{unidecode(illustration)}' WHERE (`id` = '{id}');")
+        cursor.execute(f"UPDATE `appexpress`.`service` SET `name` = '{name}', `cost` = '{cost}', `categories` = '{category}', `time` = '{size}', `description` = '{description}', `illustration` = '{unidecode(illustration)}' WHERE (`id` = '{id_}');")
         mysql.connection.commit()
         return "True"
     
@@ -976,7 +960,6 @@ def upload_image():
 @app.route('/getimage')
 def get_image(name:str = ""):
     result = f"{app.config['UPLOAD_FOLDER']}/default.png"
-    fullname = f"{app.config['UPLOAD_FOLDER']}/default.png"
     """ On recupère le nom de l'image """
     if name == "":
         reqname = request.args.get('name')
@@ -995,10 +978,6 @@ def get_image(name:str = ""):
 # Fonction qui permet de telecharger toutes les images d'un repertoire
 @app.route('/getallimages')
 def get_all_images():
-    result = f"{app.config['UPLOAD_FOLDER']}/default.png"
-    fullname = f"{app.config['UPLOAD_FOLDER']}/default.png"
-    """ On recupère le nom de l'image """
-    reqname = request.args.get('name')
     """On cherche son nom dans le repertoire des images"""
     for root, directories, files in os.walk(app.config['UPLOAD_FOLDER']):
         for name in files:
@@ -1009,6 +988,8 @@ def get_all_images():
 
 # ------ Dictionaries ------
 # Have to use Fr, En, Nl & It
+strength_img = "strengths"
+x = "Ex-Press Dry Clean"
 ## Services are missing
 dictionary = {'fr':{
     'title1': 'Découvrez notre pressing écologique',
@@ -1042,29 +1023,29 @@ dictionary = {'fr':{
     'mail': 'Mail',
     'message': 'Message',
     'about-text1': ["Vous recherchez une blanchisserie non loin d'Ixelles et Bruxelles ? ", "Vous avez besoin d'un service de pressing à domicile ? ", "Vous souhaitez faire nettoyer votre linge de maison par des professionnels ? ", "Découvrez les services de notre pressing écologique. "],
-    'about-text2': ["Ex-Press Dry Clean,", "c’est plus de 20 ans d’expérience auprès de nos clients particuliers et professionnels à Bruxelles et dans toutes les communes environnantes. ", "Nos experts du linge prennent soin de vos vêtements, de votre linge de maison ainsi que de vos chaussures au quotidien. Service de blanchisserie ou nettoyage à sec pour les textiles les plus fragiles, nous nous adaptons à vos exigences et celles de votre linge.","du secteur, nous sommes à l’affût des dernières nouveautés en termes de pressing écologique, technologies et produits professionnels mis en vente sur le marché pour prendre soin de votre linge.  Nous les renouvelons régulièrement afin de vous assurer un service parfait en toutes circonstances."],
+    'about-text2': [f"{x},", "c’est plus de 20 ans d’expérience auprès de nos clients particuliers et professionnels à Bruxelles et dans toutes les communes environnantes. ", "Nos experts du linge prennent soin de vos vêtements, de votre linge de maison ainsi que de vos chaussures au quotidien. Service de blanchisserie ou nettoyage à sec pour les textiles les plus fragiles, nous nous adaptons à vos exigences et celles de votre linge.","du secteur, nous sommes à l’affût des dernières nouveautés en termes de pressing écologique, technologies et produits professionnels mis en vente sur le marché pour prendre soin de votre linge.  Nous les renouvelons régulièrement afin de vous assurer un service parfait en toutes circonstances."],
     'about-text3': ["Notre pressing écologique vous propose un service de qualité pour nettoyer vos vêtements, votre linge de maison et vos chaussures. ", "Nous utilisons des produits de nettoyage respectueux de l’environnement pour prendre soin de votre linge et de vos vêtements. ", "Nous vous proposons un service de pressing à domicile pour vous faciliter la vie. ", "Nous collectons, nettoyons et livrons vos vêtements à domicile ou au bureau selon vos disponibilités. ","Depuis de nombreuses années, nous ne travaillons plus avec le Perchloro-éthylène. Ce solvant autrefois utilisé par les blanchisseries industrielles pour le nettoyage à sec a été classé parmi les substances cancérigènes, hautement toxiques et polluantes par les Hautes Autorités Européennes. Nous l’avons remplacé par le HiGlo pour ce qui est de notre machine situé à Etterbeek et nous utilisons le Sensene pour notre centrale de Zaventem. Des Solvants tout aussi efficace  et entièrement écologique et biodégradable. Pour enlever vos taches, nous utilisons désormais des produits 100% écologiques respectueux de votre santé et de la planète. L’écologie, à l’instar de vos taches, est aussi notre cheval de bataille !"],
     'about-text4': ["Nous sommes fiers de vous proposer des services professionnels de blanchisserie, de nettoyage à sec et de couture à Etterbeek, St-Josse, Moortebeek et Zaventem. Trois adresses différentes sous une même enseigne pour être chaque jour un peu plus près de nos clients !"],
     'strengths': [
         {
             'title': 'work1_title',
             'description':"work1_content",
-            'illustration':"strength1.jpg"
+            'illustration':f"{strength_img}1.jpg"
         },
         {
             'title': 'work2_title', 
             'description':"work2_content",
-            'illustration':"strength2.jpg"
+            'illustration':f"{strength_img}2.jpg"
         },
         {
             'title': 'work3_title',
             'description':"work3_content",
-            'illustration':"strength3.jpg"
+            'illustration':f"{strength_img}3.jpg"
         },
         {
             'title': "work4_title",
             'description':"work4_content",
-            'illustration':"strength4.jpg"
+            'illustration':f"{strength_img}4.jpg"
         }
     ]
 }, 'en':{
@@ -1099,29 +1080,29 @@ dictionary = {'fr':{
     'mail': 'Mail',
     'message': 'Message',
     'about-text1': ["Are you looking for a laundry not far from Ixelles and Brussels? ", "Do you need a home dry cleaning service? ", "Do you want to have your household linen cleaned by professionals? ", "Discover the services of our ecological dry cleaning. "],
-    'about-text2': ["Ex-Press Dry Clean,", "it is more than 20 years of experience with our private and professional clients in Brussels and all surrounding municipalities. ", "Our linen experts take care of your clothes, your household linen as well as your shoes on a daily basis. Laundry service or dry cleaning for the most fragile textiles, we adapt to your requirements and those of your linen.","sector, we are on the lookout for the latest news in terms of ecological dry cleaning, technologies and professional products put on sale on the market to take care of your linen. We renew them regularly to ensure you a perfect service in all circumstances."],
+    'about-text2': [f"{x},", "it is more than 20 years of experience with our private and professional clients in Brussels and all surrounding municipalities. ", "Our linen experts take care of your clothes, your household linen as well as your shoes on a daily basis. Laundry service or dry cleaning for the most fragile textiles, we adapt to your requirements and those of your linen.","sector, we are on the lookout for the latest news in terms of ecological dry cleaning, technologies and professional products put on sale on the market to take care of your linen. We renew them regularly to ensure you a perfect service in all circumstances."],
     'about-text3': ["Our ecological dry cleaning offers you a quality service to clean your clothes, household linen and shoes. ", "We use environmentally friendly cleaning products to take care of your linen and clothes. ", "We offer you a home dry cleaning service to make your life easier. ", "We collect, clean and deliver your clothes to your home or office according to your availability. ","For many years, we no longer work with Perchloroethylene. This solvent formerly used by industrial laundries for dry cleaning has been classified as carcinogenic, highly toxic and polluting by the European High Authorities. We have replaced it with HiGlo for our machine located in Etterbeek and we use Sensene for our Zaventem plant. Solvents just as effective and entirely ecological and biodegradable. To remove your stains, we now use 100% ecological products that are respectful of your health and the planet. Ecology, like your stains, is also our battle horse!"],
     'about-text4': ["We are proud to offer you professional laundry, dry cleaning and sewing services in Etterbeek, St-Josse, Moortebeek and Zaventem. Three different addresses under the same sign to be a little closer to our customers every day!"],
     'strengths': [
         {
             'title': 'Exceptional Quality Care',
             'description':"Our laundry company is dedicated to delivering exceptional quality care for every garment. We use state-of-the-art equipment and eco-friendly detergents that ensure your clothes are cleaned thoroughly while maintaining their original texture and color. Each item is inspected and treated by our skilled professionals to remove stains and protect delicate fabrics, providing you with perfectly clean and fresh-smelling laundry every time.",
-            'illustration':"strength1.jpg"
+            'illustration':f"{strength_img}1.jpg"
         },
         {
             'title': 'Convenient Pickup & Delivery Service',
             'description':"We understand that your time is valuable, which is why we offer a convenient pickup and delivery service. Simply schedule a pickup time that suits you, and our reliable team will collect your laundry from your doorstep. Once cleaned and carefully packaged, we will return it to you at a time of your choosing. This hassle-free service is designed to fit seamlessly into your busy lifestyle, making laundry day a thing of the past.",
-            'illustration':"strength2.jpg"
+            'illustration':f"{strength_img}2.jpg"
         },
         {
             'title': 'Customizable Laundry Plans',
             'description':"Our customizable laundry plans are tailored to meet your unique needs. Whether you require weekly, bi-weekly, or monthly services, we offer flexible scheduling options that can be adjusted to suit your requirements. Additionally, our specialized plans for different types of laundry, such as business attire, casual wear, and household items, ensure that every piece of fabric receives the specific care it needs.",
-            'illustration':"strength3.jpg"
+            'illustration':f"{strength_img}3.jpg"
         },
         {
             'title': 'Affordable Pricing',
             'description':"Quality laundry services don't have to come with a hefty price tag. Our competitive pricing structure is designed to offer exceptional value without compromising on quality. We provide clear and transparent pricing with no hidden fees, so you always know what to expect. Plus, we offer special discounts and loyalty programs to make our services even more affordable for our regular customers.",
-            'illustration':"strength4.jpg"
+            'illustration':f"{strength_img}4.jpg"
         }
     ]
 
@@ -1158,29 +1139,29 @@ dictionary = {'fr':{
     'mail': 'Mail',
     'message': 'Bericht',
     'about-text1': ["Bent u op zoek naar een wasserij niet ver van Elsene en Brussel? ", "Heeft u een thuisdroogreinigingsservice nodig? ", "Wilt u uw huishoudlinnen laten reinigen door professionals? ", "Ontdek de diensten van onze ecologische droogkuis. "],
-    'about-text2': ["Ex-Press Dry Clean,", "is meer dan 20 jaar ervaring bij onze particuliere en professionele klanten in Brussel en alle omliggende gemeenten. ", "Onze linnenexperts zorgen dagelijks voor uw kleding, uw huishoudlinnen en uw schoenen. Wasserij- of droogreinigingsdienst voor de meest kwetsbare textielen, wij passen ons aan uw eisen en die van uw linnen aan.","sector, zijn we op de hoogte van het laatste nieuws op het gebied van ecologische droogreiniging, technologieën en professionele producten die op de markt worden verkocht om voor uw linnen te zorgen. We vernieuwen ze regelmatig om u een perfecte service in alle omstandigheden te garanderen."],
+    'about-text2': [f"{x},", "is meer dan 20 jaar ervaring bij onze particuliere en professionele klanten in Brussel en alle omliggende gemeenten. ", "Onze linnenexperts zorgen dagelijks voor uw kleding, uw huishoudlinnen en uw schoenen. Wasserij- of droogreinigingsdienst voor de meest kwetsbare textielen, wij passen ons aan uw eisen en die van uw linnen aan.","sector, zijn we op de hoogte van het laatste nieuws op het gebied van ecologische droogreiniging, technologieën en professionele producten die op de markt worden verkocht om voor uw linnen te zorgen. We vernieuwen ze regelmatig om u een perfecte service in alle omstandigheden te garanderen."],
     'about-text3': ["Onze ecologische droogkuis biedt u een kwaliteitsvolle service om uw kleding, huishoudlinnen en schoenen te reinigen. ", "We gebruiken milieuvriendelijke reinigingsproducten om voor uw linnen en kleding te zorgen. ", "We bieden u een thuisdroogreinigingsservice om uw leven gemakkelijker te maken. ", "Wij halen, reinigen en leveren uw kleding aan huis of op kantoor volgens uw beschikbaarheid. ","Al vele jaren werken we niet meer met Perchloorethyleen. Dit oplosmiddel dat vroeger door industriële wasserijen werd gebruikt voor droogreiniging, is door de Europese Hoge Autoriteiten geclassificeerd als kankerverwekkend, zeer giftig en vervuilend. We hebben het vervangen door HiGlo voor onze machine in Etterbeek en we gebruiken Sensene voor onze Zaventem-plant. Even effectieve en volledig ecologische en biologisch afbreekbare oplosmiddelen. Om uw vlekken te verwijderen, gebruiken we nu 100% ecologische producten die respectvol zijn voor uw gezondheid en de planeet. Ecologie, net als uw vlekken, is ook ons strijdros!"],
     'about-text4': ["We zijn er trots op u professionele wasserij-, droogreinigings- en naaiservices aan te bieden in Etterbeek, St-Josse, Moortebeek en Zaventem. Drie verschillende adressen onder hetzelfde bord om elke dag een beetje dichter bij onze klanten te zijn!"],
     'strengths': [
         {
             'title': 'Uitzonderlijke kwaliteitszorg',
             'description':"Ons wasserijbedrijf is toegewijd aan het leveren van uitzonderlijke kwaliteitszorg voor elk kledingstuk. We gebruiken geavanceerde apparatuur en milieuvriendelijke wasmiddelen die ervoor zorgen dat uw kleding grondig wordt gereinigd terwijl de oorspronkelijke textuur en kleur behouden blijven. Elk item wordt geïnspecteerd en behandeld door onze bekwame professionals om vlekken te verwijderen en delicate stoffen te beschermen, waardoor u elke keer perfect schone en fris ruikende was krijgt.",
-            'illustration':"strength1.jpg"
+            'illustration':f"{strength_img}1.jpg"
         },
         {
             'title': 'Handige ophaal- en bezorgservice',
             'description':"We begrijpen dat uw tijd kostbaar is, daarom bieden we een handige ophaal- en bezorgservice aan. Plan eenvoudig een ophaaltijd die bij u past, en ons betrouwbare team haalt uw wasgoed op bij uw voordeur. Zodra het is gereinigd en zorgvuldig verpakt, zullen we het op een door u gekozen tijdstip aan u teruggeven. Deze moeiteloze service is ontworpen om naadloos aan te sluiten bij uw drukke levensstijl, waardoor de wasdag tot het verleden behoort.",
-            'illustration':"strength2.jpg"
+            'illustration':f"{strength_img}2.jpg"
         },
         {
             'title': 'Aanpasbare wasplannen',
             'description':"Onze aanpasbare wasplannen zijn ontworpen om aan uw unieke behoeften te voldoen. Of u nu wekelijkse, tweewekelijkse of maandelijkse diensten nodig heeft, wij bieden flexibele planningsopties die kunnen worden aangepast aan uw wensen. Bovendien zorgen onze gespecialiseerde plannen voor verschillende soorten was, zoals zakelijke kleding, vrijetijdskleding en huishoudelijke artikelen, ervoor dat elk stuk stof de specifieke zorg krijgt die het nodig heeft.",   
-            'illustration':"strength3.jpg"
+            'illustration':f"{strength_img}3.jpg"
         },
         {
             'title': 'Betaalbare prijzen',
             'description':"Kwaliteitsvolle wasservices hoeven niet duur te zijn. Onze concurrerende prijsstructuur is ontworpen om uitzonderlijke waarde te bieden zonder in te boeten aan kwaliteit. We bieden duidelijke en transparante prijzen zonder verborgen kosten, zodat u altijd weet wat u kunt verwachten. Bovendien bieden we speciale kortingen en loyaliteitsprogramma's om onze diensten nog betaalbaarder te maken voor onze vaste klanten.",
-            'illustration':"strength4.jpg"
+            'illustration':f"{strength_img}4.jpg"
         }
     ]
 
@@ -1216,29 +1197,29 @@ dictionary = {'fr':{
     'mail': 'Mail',
     'message': 'Messaggio',
     'about-text1': ["Stai cercando una lavanderia non lontano da Ixelles e Bruxelles? ", "Hai bisogno di un servizio di lavaggio a secco a domicilio? ", "Vuoi far pulire il tuo bucato da professionisti? ", "Scopri i servizi del nostro lavaggio a secco ecologico. "],
-    'about-text2': ["Ex-Press Dry Clean,", "è più di 20 anni di esperienza con i nostri clienti privati e professionali a Bruxelles e in tutti i comuni circostanti. ", "I nostri esperti di biancheria si prendono cura dei tuoi vestiti, della tua biancheria da casa e delle tue scarpe quotidianamente. Servizio di lavanderia o lavaggio a secco per i tessuti più fragili, ci adattiamo alle tue esigenze e a quelle della tua biancheria.","settore, siamo sempre alla ricerca delle ultime novità in materia di lavaggio a secco ecologico, tecnologie e prodotti professionali messi in vendita sul mercato per prendersi cura della tua biancheria. Li rinnoviamo regolarmente per garantirti un servizio perfetto in tutte le circostanze."],
+    'about-text2': [f"{x},", "è più di 20 anni di esperienza con i nostri clienti privati e professionali a Bruxelles e in tutti i comuni circostanti. ", "I nostri esperti di biancheria si prendono cura dei tuoi vestiti, della tua biancheria da casa e delle tue scarpe quotidianamente. Servizio di lavanderia o lavaggio a secco per i tessuti più fragili, ci adattiamo alle tue esigenze e a quelle della tua biancheria.","settore, siamo sempre alla ricerca delle ultime novità in materia di lavaggio a secco ecologico, tecnologie e prodotti professionali messi in vendita sul mercato per prendersi cura della tua biancheria. Li rinnoviamo regolarmente per garantirti un servizio perfetto in tutte le circostanze."],
     'about-text3': ["Il nostro lavaggio a secco ecologico ti offre un servizio di qualità per pulire i tuoi vestiti, la tua biancheria da casa e le tue scarpe. ", "Utilizziamo prodotti per la pulizia rispettosi dell'ambiente per prenderti cura della tua biancheria e dei tuoi vestiti. ", "Ti offriamo un servizio di lavaggio a secco a domicilio per semplificarti la vita. ", "Ritiriamo, puliamo e consegniamo i tuoi vestiti a casa o in ufficio secondo la tua disponibilità. ","Da molti anni non lavoriamo più con il Percloroetilene. Questo solvente usato in passato dalle lavanderie industriali per il lavaggio a secco è stato classificato come cancerogeno, altamente tossico e inquinante dalle Autorità Europee. L'abbiamo sostituito con l'HiGlo per la nostra macchina situata a Etterbeek e utilizziamo il Sensene per la nostra centrale di Zaventem. Solventi altrettanto efficaci e completamente ecologici e biodegradabili. Per rimuovere le macchie, ora utilizziamo prodotti al 100% ecologici rispettosi della tua salute e del pianeta. L'ecologia, come le tue macchie, è anche il nostro cavallo di battaglia!"],
     'about-text4': ["Siamo orgogliosi di offrirti servizi professionali di lavanderia, lavaggio a secco e sartoria a Etterbeek, St-Josse, Moortebeek e Zaventem. Tre indirizzi diversi sotto lo stesso segno per essere un po' più vicini ai nostri clienti ogni giorno!"],
     'strengths': [
         {
             'title': 'Cura della qualità eccezionale',
             'description':"La nostra azienda di lavanderia si impegna a fornire una cura della qualità eccezionale per ogni capo. Utilizziamo attrezzature all'avanguardia e detergenti ecologici che garantiscono una pulizia profonda dei tuoi vestiti preservandone la texture e il colore originali. Ogni articolo viene ispezionato e trattato dai nostri professionisti qualificati per eliminare le macchie e proteggere i tessuti delicati, offrendoti così un bucato perfettamente pulito e fresco ogni volta.",
-            'illustration':"strength1.jpg"
+            'illustration':f"{strength_img}1.jpg"
         },
         {
             'title': 'Servizio di ritiro e consegna comodo',
             'description':"Sappiamo che il tuo tempo è prezioso, ecco perché offriamo un servizio di ritiro e consegna comodo. Basta pianificare un orario di ritiro che ti convenga, e il nostro team affidabile verrà a ritirare il tuo bucato alla tua porta. Una volta pulito e accuratamente confezionato, te lo restituiremo all'ora che preferisci. Questo servizio senza stress è progettato per integrarsi perfettamente nel tuo stile di vita frenetico, facendo del giorno del bucato un lontano ricordo.",
-            'illustration':"strength2.jpg"
+            'illustration':f"{strength_img}2.jpg"
         },
         {
             'title': 'Piani di lavanderia personalizzabili',
             'description':"I nostri piani di lavanderia personalizzabili sono progettati per soddisfare le tue esigenze specifiche. Che tu abbia bisogno di un servizio di pulizia regolare o occasionale, abbiamo una soluzione adatta al tuo programma e al tuo budget. I nostri pacchetti flessibili ti consentono di scegliere i servizi di cui hai bisogno, quando ne hai bisogno, offrendoti così una soluzione di lavanderia su misura che soddisfa le tue aspettative.",
-            'illustration':"strength3.jpg"
+            'illustration':f"{strength_img}3.jpg"
         },
         {
             'title': 'Prezzi competitivi',
             'description':"Offriamo prezzi competitivi per i nostri servizi di lavanderia e lavaggio a secco. I nostri prezzi convenienti sono progettati per soddisfare le tue esigenze di pulizia senza compromettere il tuo budget. Offriamo pacchetti di lavanderia flessibili che ti consentono di scegliere i servizi di cui hai bisogno, quando ne hai bisogno, offrendoti così una soluzione di pulizia su misura che soddisfa le tue aspettative.",    
-            'illustration':"strength4.jpg"
+            'illustration':f"{strength_img}4.jpg"
         }
     ]
 }}

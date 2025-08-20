@@ -327,9 +327,10 @@ command_service = Enum('command_service',[
 
 #==================================
 
-def format_to_mysql(a,sep):
+def format_to_mysql(a):
     # if a is a number value, return it as it is
-    if type(a) == int or type(a) == float:
+    t = type(a)
+    if  t == int or t == float:
         return a
     else:
         return f"'{a}'"
@@ -352,7 +353,6 @@ def get_data(filetype:str  ,name: str, where = None, lang = None):
         cur.execute(com)
 
     else:
-        translation_table = f"{name}_translation"
         cur.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.{name}")
     a = cur.fetchall()
     if filetype == 'json':
@@ -376,30 +376,23 @@ def operate(model:str):
     if not primary_key:
         return jsonify({"status": "error", "message": "No primary key found"}), 400
     
-
-    result = ""
     if request.method == "POST":
         cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.{model}")
-        attributes = list(cursor.column_names)
-        values = list(request.json[str(att)] for att in attributes)
         ### Execute command
         cursor.close()
         cursor = mysql.new_cursor(dictionary = True, buffered = True)
         create = ", ".join([f"`{att}`" for att in request.json.keys()]) # Attributes here needs to be embeded in `` because they are reserved words in SQL
-        query = f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({create}) VALUES ({', '.join([f'{format_to_mysql(request.json[att],1)}' for att in request.json.keys()])})"
-        #cursor.execute(f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({','.join(list(FormatTextToMysql(att,1) for att in attributes))}) VALUES ({','.join(list(FormatTextToMysql(val,2) for val in values))})")
-        
-        print(query)
+        query = f"INSERT INTO {app.config['MYSQL_DB']}.{model} ({create}) VALUES ({', '.join([f'{format_to_mysql(request.json[att])}' for att in request.json.keys()])})"
+
         cursor.execute(query)
         mysql.connection.commit()
         return str(cursor.lastrowid)
     if request.method == "DELETE":
         # Get the id of the element to delete
         cursor.execute(f"SELECT * FROM {app.config['MYSQL_DB']}.{model}")
-        model_ID = list(cursor.column_names)[-1]
         cursor.close()
         cursor = mysql.new_cursor(dictionary = True, buffered = True)
-        cursor.execute(f"DELETE FROM {app.config['MYSQL_DB']}.{model} WHERE {primary_key} = {format_to_mysql(request.json[primary_key], 1)}")
+        cursor.execute(f"DELETE FROM {app.config['MYSQL_DB']}.{model} WHERE {primary_key} = {format_to_mysql(request.json[primary_key])}")
         mysql.connection.commit()
         return "True"
     if request.method == "PUT":
@@ -409,11 +402,9 @@ def operate(model:str):
             updates = ", ".join([f"{att} = {request.json[att]}" for att in request.json.keys() if att != primary_key])
             query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {request.json[primary_key]}"
         else:
-            updates = ", ".join([f"{att} = {format_to_mysql(request.json[att],1)}" for att in request.json.keys() if att != primary_key])
-            query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {format_to_mysql(request.json[primary_key],2)}"
-        print(updates)
-        print(query)
-        
+            updates = ", ".join([f"{att} = {format_to_mysql(request.json[att])}" for att in request.json.keys() if att != primary_key])
+            query = f"UPDATE {app.config['MYSQL_DB']}.{model} SET {updates} WHERE {primary_key} = {format_to_mysql(request.json[primary_key])}"
+
         cursor.execute(query)
         mysql.connection.commit()
         cursor.close()
@@ -444,13 +435,8 @@ def page_not_found(e):
 @app.route('/<lang>/home/<subpage>')
 @app.route('/<lang>/home/<subpage>/<store>')
 def home(lang = 'fr', subpage = None, store = None):
-    #fill_database()
     #set language
     session['lang'] = lang
-    user = getattr(g, 'user', None)
-    
-    print(getattr(g, 'user', None))
-    #return str((GetCostDelevery("Rue Saint-germain 92 1410 Waterloo")*price_by_km).quantize(decimal.Decimal('.01')))
     categories = sorted(get_data('full','category'), key=lambda x: x['index'])
     stores = get_data('full','store')
     services = get_data('full','service')
@@ -490,8 +476,6 @@ def pricing(lang = 'fr', subpage = None, store = None):
     available_services = [ x for x in services if x['category_name'] == subpage]
 
     selected_category = [ x for x in categories if x['name'] == subpage][0] if subpage else None
-    #if selected_category:
-    #   selected_category = { k.encode('utf-8'): v.encode('utf-8') for k, v in selected_category.items()}
     # Convert all informations in selectedCategory to utf-8
 
     stores = get_data('full','store')
@@ -522,7 +506,7 @@ def collaborations(lang = 'fr', subpage = None):
 def submit_collaboration():
     data = request.form
     categories = sorted(get_data('full','category'), key=lambda x: x['index'])
-    availablesCategoriesNames = [ x['name'] for x in categories]
+    availables_categories_names = [ x['name'] for x in categories]
     #send mail to admin to inform him about the message
     company = data['company_name']
     industry = data['industry']
@@ -532,9 +516,9 @@ def submit_collaboration():
     message = data['message']
     recaptcha = data['g-recaptcha-response']
 
-    recaptchaResponse = check_recaptcha(token = recaptcha)
+    recaptcha_response = check_recaptcha(token = recaptcha)
 
-    if (recaptchaResponse == False):
+    if (recaptcha_response == False):
         flash(flash_dict[2], 'error')
         return redirect(url_for('collaborations', lang = session['lang']))
     try:
@@ -545,7 +529,7 @@ def submit_collaboration():
     #Set a cool message cause form is okay
     flash(flash_dict[7], 'success')
 
-    selected_services = [ x for x in data if x in  availablesCategoriesNames] if all_services_check == False else availablesCategoriesNames
+    selected_services = [ x for x in data if x in  availables_categories_names] if all_services_check == False else availables_categories_names
     #send mail to admin to inform him about the Collaboration
     send_email(
         to_addr=app.config["ADMIN_EMAIL"],
@@ -620,9 +604,9 @@ def submit_career():
 
     recaptcha = data['g-recaptcha-response']
     print(data, flush = True)
-    recaptchaResponse = check_recaptcha(token = recaptcha)
+    recaptcha_response = check_recaptcha(token = recaptcha)
     is_invalid = email == None or name == None # Check if some datas are present 
-    if (recaptchaResponse == False or is_invalid):
+    if (recaptcha_response == False or is_invalid):
         flash(flash_dict[2], 'error')
         return redirect(url_for('career', lang = session['lang']))
 
@@ -684,7 +668,6 @@ def submit_career():
 @app.route('/<lang>/contact/')
 @app.route('/<lang>/contact/<subpage>')
 def contact(lang = 'fr', subpage = None):
-    greatings = _("Bonjour")
     #set language
     session['lang'] = lang
     stores = get_data('full','store')
@@ -716,13 +699,12 @@ def localization(lang = 'fr', subpage = None ):
 
 
 #Funtion to make a post to googleReCaptcha and return the response
-def check_recaptcha(token:str , remoteip:str = None):
+def check_recaptcha(token:str):
     key = app.config["RECAPTCHA_SERVER_KEY"]
     url = "https://www.google.com/recaptcha/api/siteverify"
     obj = {"secret":key, "response":token}
     x = requests.post(url, data = obj)
     data = x.json()
-    print(data, flush = True)
     return data['success']
 
 @app.route('/chatwithus', methods=['POST'])
@@ -733,10 +715,9 @@ def chatwithus():
     phone = data['phone']
     message = data['subject']
     recaptcha = data['g-recaptcha-response']
-    print(data, flush = True)
-    recaptchaResponse = check_recaptcha(token = recaptcha)
+    recaptcha_response = check_recaptcha(token = recaptcha)
 
-    if (recaptchaResponse == False):
+    if (recaptcha_response == False):
         flash(flash_dict[12], 'error')
         return redirect(url_for('contact', lang = session['lang']))
 
@@ -811,7 +792,7 @@ import threading
 @requires_auth
 def restart_server():
     def restart():
-        result = subprocess.run(["sudo","systemctl", "restart", f"{app.config['SERVICE_NAME']}"], check=True, capture_output=True, text=True)
+        _ = subprocess.run(["sudo","systemctl", "restart", f"{app.config['SERVICE_NAME']}"], check=True, capture_output=True, text=True)
     
     thread = threading.Thread(target=restart, daemon=True)
     thread.start()
@@ -846,9 +827,7 @@ def update_babel():
     pot.save(f"{app.config['ROOT_FOLDER']}/messages.pot")
     # Update the translations files
     updating_process = subprocess.Popen(["pybabel", "update", "-i", "messages.pot", "-d", "translations"])
-    print("Updating translations files")
     updating_process.wait()
-    print("Translations updated")
     return jsonify({"status": "success", "message": "Translations updated"})
 
 #Function to get all dictionnary words... the pot file
@@ -860,7 +839,7 @@ def get_pot():
 
 @app.route('/babel_test')
 def babel_test():
-    pot = polib.pofile(f'./messages.pot')
+    pot = polib.pofile('./messages.pot')
     t = {entry.msgid: entry.msgstr for entry in pot}
     return t
 
@@ -975,7 +954,6 @@ def upload_image():
 @app.route('/getimage')
 def get_image(name:str = ""):
     result = f"{app.config['UPLOAD_FOLDER']}/default.png"
-    fullname = f"{app.config['UPLOAD_FOLDER']}/default.png"
     """ On recupère le nom de l'image """
     if name == "":
         reqname = request.args.get('name')
@@ -994,10 +972,6 @@ def get_image(name:str = ""):
 # Fonction qui permet de telecharger toutes les images d'un repertoire
 @app.route('/getallimages')
 def get_all_images():
-    result = f"{app.config['UPLOAD_FOLDER']}/default.png"
-    fullname = f"{app.config['UPLOAD_FOLDER']}/default.png"
-    """ On recupère le nom de l'image """
-    reqname = request.args.get('name')
     """On cherche son nom dans le repertoire des images"""
     for root, directories, files in os.walk(app.config['UPLOAD_FOLDER']):
         for name in files:
